@@ -26,12 +26,9 @@ const PORT = Number(process.env.PORT || 3000);
 const ROOT = __dirname;
 
 // Render.com 환경에서는 .agents 폴더가 없을 수 있으므로 대체 경로 사용
-const AGENTS_DIR = fs.existsSync(path.join(ROOT, '.agents')) 
-  ? path.join(ROOT, '.agents') 
+const DATA_DIR = fs.existsSync(path.join(ROOT, '.agents', 'data'))
+  ? path.join(ROOT, '.agents', 'data')
   : ROOT;
-const DATA_DIR = fs.existsSync(path.join(AGENTS_DIR, 'data'))
-  ? path.join(AGENTS_DIR, 'data')
-  : AGENTS_DIR;
 const DATA_FILE = fs.existsSync(path.join(DATA_DIR, 'universities.json'))
   ? path.join(DATA_DIR, 'universities.json')
   : path.join(ROOT, 'universities.json');
