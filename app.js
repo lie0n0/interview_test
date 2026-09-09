@@ -39,6 +39,7 @@ const S = {
   phase: 'idle',   // idle | ready | listening | thinking
   busy: false,
   timerExpired: false,
+  overtimeSec: 0,  // 면접 시간 초과(초). 양수면 최종 점수에서 감점.
 
   /* 계정·기록 */
   token: '',
@@ -97,6 +98,7 @@ const el = {
   startHint: $('start-hint'),
 
   timer: $('timer'),
+  timerLabel: $('timer-label'),
   progress: $('progress'),
   passagePanel: $('passage-panel'),
   passageText: $('passage-text'),
@@ -385,11 +387,22 @@ function passageScorePrompt(question, answer) {
 - 논리적 전개 (30점): 주장→근거→결론의 논리 구조가 명확한가
 - 종합적 사고력 (30점): 여러 관점을 고려하고 창의적·심화 통찰이 있는가
 
-등급 규칙: A=만점, B=만점의 80%, C=만점의 60%, D=만점의 40%, F=만점의 20%. score는 등급 기준으로 산출하라.
-답변이 한 문장 미만이면 D 이하, 빈 답변이면 F. 모범답안 힌트와 비교해 객관적으로 채점하라.
+[등급별 구체적 기준]
+- A(만점): 제시문을 정확히 이해하고, 논리적 구조가 완벽하며, 독창적 심화 통찰이 있는 답변
+- B(만점의 72%): 제시문 이해도 높고 논리적이나 심화가 부족한 답변
+- C(만점의 55%): 제시문을 대체로 이해하나 논리 구조가 미흡하거나 평범한 답변
+- D(만점의 38%): 제시문을 제대로 이해하지 못했거나 논리가 부족한 답변
+- F(만점의 18%): 빈 답변, 질문과 무관한 답변, 한 문장 미만의 답변
+
+[채점 시 유의사항]
+- 제시문의 핵심 내용을 인용하지 않은 답변은 감점
+- 근거 없이 주장을 나열한 답변은 논리적 전개에서 감점
+- 같은 내용의 반복이나 두루뭉술한 답변은 종합적 사고력에서 감점
+- 모범답안 힌트와 비교하여 내용의 정확성과 깊이를 평가
+- 점수 분포: 전체 평균이 60점대가 되도록 채점 (모든 답변에 높은 점수 금지)
 
 다음 JSON만 출력하라 (추가 텍스트 금지):
-{"scores":{"타당성":{"grade":"A","score":40,"comment":"한 줄 코멘트"},"논리적전개":{"grade":"B","score":24,"comment":"한 줄 코멘트"},"종합적사고력":{"grade":"A","score":30,"comment":"한 줄 코멘트"}},"total":94,"feedback":"종합 피드백 (2~3문장)"}`;
+{"scores":{"타당성":{"grade":"평가등급","score":0,"comment":"한 줄 코멘트"},"논리적전개":{"grade":"평가등급","score":0,"comment":"한 줄 코멘트"},"종합적사고력":{"grade":"평가등급","score":0,"comment":"한 줄 코멘트"}},"total":0,"feedback":"종합 피드백 (2~3문장)"}`;
 }
 
 function docStartPrompt() {
@@ -460,11 +473,24 @@ ${S.dept.disposition || '평가 성향 정보가 없어 표준 기준을 적용�
 인성및공동체역량: ${w['인성및공동체역량']}점
 의사소통능력: ${w['의사소통능력']}점
 
-등급 환산: A=100, B=90, C=80, D=70, E=60, F=50. 각 역량 score = (환산값/100) × 배점(정수 반올림). total은 5개 score의 합(0~100).
-생기부 근거 활동과 답변을 종합하고, 교수 평가 성향을 감안해 객관적으로 채점하라.
+등급 환산: A=100, B=84, C=68, D=52, E=36, F=20. 각 역량 score = (환산값/100) × 배점(정수 반올림). total은 5개 score의 합(0~100).
+
+[등급별 구체적 기준]
+- A: 생기부 활동과 답변이 정확히 일치하고, 심화 내용이 풍부하며, 교수 관점에서 인상적인 답변
+- B: 생기부와 답변이 대체로 일치하나 심화가 부족하거나 약간의 모호함이 있는 답변
+- C: 생기부 내용을 언급했으나 답변이 피상적이거나 연결이 불명확한 답변
+- D: 생기부와 무관한 답변, 또는 질문 의도를 파악하지 못한 답변
+- F: 빈 답변, 질문과 완전히 무관한 답변, 한 문장 미만
+
+[채점 시 유의사항]
+- 생기부에 없는 내용을 답변으로 제시하면 전공적합성에서 감점
+- 근거 없이 "열심히 하겠습니다" 같은 막연한 답변은 인성역량에서 감점
+- 답변이 짧거나 두루뭉술하면 의사소통능력에서 감점
+- 점수 분포: 전체 평균이 60점대가 되도록 채점 (모든 답변에 높은 점수 금지)
+- 생기부 근거 활동과 답변을 종합하고, 교수 평가 성향을 감안해 객관적으로 채점하라.
 
 다음 JSON만 출력하라 (추가 텍스트 금지):
-{"scores":{"전공적합성":{"grade":"A","score":25,"comment":"한 줄 코멘트"},"진로역량":{"grade":"B","score":23,"comment":"한 줄 코멘트"},"발전가능성":{"grade":"A","score":20,"comment":"한 줄 코멘트"},"인성및공동체역량":{"grade":"B","score":14,"comment":"한 줄 코멘트"},"의사소통능력":{"grade":"A","score":15,"comment":"한 줄 코멘트"}},"total":97,"feedback":"종합 피드백 (2~3문장)"}`;
+{"scores":{"전공적합성":{"grade":"평가등급","score":0,"comment":"한 줄 코멘트"},"진로역량":{"grade":"평가등급","score":0,"comment":"한 줄 코멘트"},"발전가능성":{"grade":"평가등급","score":0,"comment":"한 줄 코멘트"},"인성및공동체역량":{"grade":"평가등급","score":0,"comment":"한 줄 코멘트"},"의사소통능력":{"grade":"평가등급","score":0,"comment":"한 줄 코멘트"}},"total":0,"feedback":"종합 피드백 (2~3문장)"}`;
 }
 
 /* ================= TTS (음성 출력) ================= */
@@ -829,32 +855,30 @@ function startTimer(totalSec) {
   S.timer.id = setInterval(() => {
     if (!timerShouldTick()) return;
     S.timer.left--;
-    if (S.timer.left <= 0) {
-      S.timer.left = 0;
-      clearInterval(S.timer.id);
+    if (S.timer.left <= 0 && !S.timerExpired) {
       S.timerExpired = true;
-      el.timer.classList.remove('warn', 'danger');
-      if (!S.busy) {
-        addSystem('면접 시간이 종료되었습니다.');
-        finalize();
-      }
+      addSystem('면접 시간이 종료되었습니다. 이후 답변은 초과 시간으로 감점됩니다.');
     }
     renderTimer();
   }, 1000);
 }
 
 function renderTimer() {
-  const m = String(Math.floor(S.timer.left / 60)).padStart(2, '0');
-  const s = String(S.timer.left % 60).padStart(2, '0');
-  el.timer.textContent = `${m}:${s}`;
+  const neg = S.timer.left < 0;
+  const abs = Math.abs(S.timer.left);
+  const m = String(Math.floor(abs / 60)).padStart(2, '0');
+  const s = String(abs % 60).padStart(2, '0');
+  el.timer.textContent = `${neg ? '-' : ''}${m}:${s}`;
+  el.timerLabel.textContent = neg ? '초과 시간' : '남은 시간';
   el.timer.classList.toggle('warn', S.timer.left <= 60 && S.timer.left > 30);
-  el.timer.classList.toggle('danger', S.timer.left <= 30 && S.timer.left > 0);
+  el.timer.classList.toggle('danger', S.timer.left <= 30);
 }
 
 function clearTimer() {
   clearInterval(S.timer.id);
   S.timer.id = null;
   el.timer.classList.remove('warn', 'danger');
+  el.timerLabel.textContent = '남은 시간';
 }
 
 /* ================= 면접 진행 ================= */
@@ -1043,7 +1067,6 @@ async function scoreAndAdvance(main, followupAnswer) {
     if (next < S.questions.length) {
       askQuestion(next);
     } else {
-      if (S.timerExpired && !S.busy) addSystem('면접 시간이 종료되었습니다.');
       await finalize();
     }
   } catch (e) {
@@ -1078,21 +1101,21 @@ function normalizeScore(result, mode) {
 
 function gradeFromRatio(ratio, mode) {
   if (mode === 'document') {
-    if (ratio >= 0.95) return 'A';
-    if (ratio >= 0.85) return 'B';
-    if (ratio >= 0.75) return 'C';
-    if (ratio >= 0.65) return 'D';
-    if (ratio >= 0.55) return 'E';
+    if (ratio >= 0.9) return 'A';
+    if (ratio >= 0.75) return 'B';
+    if (ratio >= 0.6) return 'C';
+    if (ratio >= 0.45) return 'D';
+    if (ratio >= 0.3) return 'E';
     return 'F';
   }
-  if (ratio >= 0.9) return 'A';
-  if (ratio >= 0.7) return 'B';
+  if (ratio >= 0.85) return 'A';
+  if (ratio >= 0.65) return 'B';
   if (ratio >= 0.5) return 'C';
   if (ratio >= 0.3) return 'D';
   return 'F';
 }
 
-function computeAggregates(scores = S.scores, mode = S.mode) {
+function computeAggregates(scores = S.scores, mode = S.mode, overtimeSec = S.overtimeSec) {
   const n = scores.length;
   const cats = mode === 'passage' ? PASSAGE_CATS : DOC_CATS;
   const agg = {};
@@ -1107,12 +1130,15 @@ function computeAggregates(scores = S.scores, mode = S.mode) {
     agg[key] = { avgScore, avgMax, ratio: avgMax ? avgScore / avgMax : 0 };
   }
   const avgTotal = n ? scores.reduce((a, b) => a + b.total, 0) / n : 0;
-  const finalTotal = Math.round(avgTotal);
+  let finalTotal = Math.round(avgTotal);
+  const overtimePenalty = Math.min(20, Math.floor(overtimeSec / 60) * 2); // 초과 1분당 2점 감점, 최대 20점
+  finalTotal = Math.max(0, finalTotal - overtimePenalty);
   const feedbacks = [...new Set(scores.map((x) => x.feedback).filter(Boolean))];
-  return { n, agg, avgTotal, finalTotal, feedbacks };
+  return { n, agg, avgTotal, finalTotal, feedbacks, overtimePenalty };
 }
 
 async function finalize() {
+  S.overtimeSec = Math.max(0, -S.timer.left);
   clearTimer();
   setPhase('idle');
   el.micBtn.disabled = true;
@@ -1124,7 +1150,7 @@ async function finalize() {
 /* ================= 점수 화면 ================= */
 
 function paintScore(targets, scores, mode, meta = {}) {
-  const { agg, finalTotal, feedbacks } = computeAggregates(scores, mode);
+  const { agg, finalTotal, feedbacks, overtimePenalty } = computeAggregates(scores, mode, meta.overtimeSec ?? S.overtimeSec);
   const C = 2 * Math.PI * 78;
   targets.gauge.innerHTML = `<svg viewBox="0 0 180 180" aria-hidden="true">
     <defs><linearGradient id="gauge-grad" x1="0" y1="0" x2="1" y2="1">
@@ -1137,7 +1163,8 @@ function paintScore(targets, scores, mode, meta = {}) {
 
   const totalGrade = gradeFromRatio(finalTotal / 100, mode);
   const totalWord = finalTotal >= 90 ? '매우 우수' : finalTotal >= 80 ? '우수' : finalTotal >= 70 ? '양호' : finalTotal >= 60 ? '보통' : '미흡';
-  targets.grade.textContent = `${totalWord} (${totalGrade} 등급)`;
+  const penNote = overtimePenalty > 0 ? ` · 초과 시간 -${overtimePenalty}점` : '';
+  targets.grade.textContent = `${totalWord} (${totalGrade} 등급)${penNote}`;
   targets.feedback.textContent = feedbacks.join(' ') || '모든 문항이 채점되었습니다.';
 
   targets.qScores.innerHTML = '';
@@ -1395,6 +1422,7 @@ async function saveRecord() {
         grade,
         items: S.scores,
         transcript: S.transcript,
+        overtimeSec: S.overtimeSec,
         comprehensive: comp,
       }),
     });
@@ -1438,7 +1466,7 @@ function renderRecords() {
 function showRecordView(rec) {
   S.currentRecord = rec;
   el.recvTitle.textContent = recordTitle(rec);
-  const meta = rec.comprehensive && rec.comprehensive.meta ? rec.comprehensive.meta : {};
+  const meta = { ...(rec.comprehensive && rec.comprehensive.meta ? rec.comprehensive.meta : {}), overtimeSec: rec.overtimeSec || 0 };
   paintScore({
     gauge: el.recvGauge, final: el.recvFinal, grade: el.recvGrade, feedback: el.recvFeedback,
     qScores: el.recvQScores, catScores: el.recvCatScores,
@@ -1537,7 +1565,7 @@ function resetInterview(full) {
   clearTimer();
   S.questions = []; S.qIndex = 0; S.scores = []; S.passage = ''; S.followupQ = null;
   S.followupActive = false; pendingMain = null;
-  S.busy = false; S.timerExpired = false; S.phase = 'idle';
+  S.busy = false; S.timerExpired = false; S.overtimeSec = 0; S.phase = 'idle';
   S.transcript = [];
   S.comprehensive = null;
   S.compBusy = false;

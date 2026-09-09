@@ -656,6 +656,7 @@ const server = http.createServer(async (req, res) => {
         grade: String(parsed.grade || ''),
         items: Array.isArray(parsed.items) ? parsed.items : [],
         transcript: Array.isArray(parsed.transcript) ? parsed.transcript : [],
+        overtimeSec: Number(parsed.overtimeSec) || 0,
         comprehensive: parsed.comprehensive && typeof parsed.comprehensive === 'object' ? parsed.comprehensive : null,
       };
       const records = loadRecords();
