@@ -22,10 +22,19 @@ const zlib = require('node:zlib');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 
-const PORT = Number(process.env.PORT || 3333);
+const PORT = Number(process.env.PORT || 3000);
 const ROOT = __dirname;
-const DATA_FILE = path.join(ROOT, '.agents', 'data', 'universities.json');
-const DATA_DIR = path.join(ROOT, '.agents', 'data');
+
+// Render.com 환경에서는 .agents 폴더가 없을 수 있으므로 대체 경로 사용
+const AGENTS_DIR = fs.existsSync(path.join(ROOT, '.agents')) 
+  ? path.join(ROOT, '.agents') 
+  : ROOT;
+const DATA_DIR = fs.existsSync(path.join(AGENTS_DIR, 'data'))
+  ? path.join(AGENTS_DIR, 'data')
+  : AGENTS_DIR;
+const DATA_FILE = fs.existsSync(path.join(DATA_DIR, 'universities.json'))
+  ? path.join(DATA_DIR, 'universities.json')
+  : path.join(ROOT, 'universities.json');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 const RECORDS_FILE = path.join(DATA_DIR, 'records.json');
