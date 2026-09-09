@@ -1,0 +1,13 @@
+{
+  "name": "interview-practice",
+  "version": "1.0.0",
+  "private": true,
+  "description": "무료 opencode zen LLM 면접관과 연습하는 대학 입시 면접 웹앱 (HTML 기반, 빌드 불필요)",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check app.js && node -e \"JSON.parse(require('fs').readFileSync('.agents/data/universities.json','utf8'))\" && echo '문법/JSON 검사 통과'"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

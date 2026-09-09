@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 면접 연습실 — 대학 입시 면접 연습</title>
+  <meta name="description" content="무료 opencode zen LLM 면접관과 함께하는 대학 입시 면접 연습 (제시문 면접 · 서류 기반 면접)" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar" id="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M15 9.5c-.7-1.1-1.8-1.7-3-1.7-1.9 0-3.8 1.6-3.8 4.2s1.9 4.2 3.8 4.2c1.2 0 2.3-.6 3-1.7" />
+        </svg>
+      </span>
+      <div>
+        <h1>AI 면접 연습실</h1>
+        <p class="brand-sub">무료 LLM 면접관 · opencode zen</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div id="hdr-meta" class="hdr-meta" hidden></div>
+      <label class="toggle">
+        <span class="toggle-label">음성 안내</span>
+        <input type="checkbox" id="tts-chk" checked />
+        <span class="track" aria-hidden="true"></span>
+      </label>
+      <div class="auth-area">
+        <div class="user-chip" id="user-chip" hidden>
+          <span id="user-name" class="user-name"></span>
+          <button id="btn-my-records" class="btn-ghost btn-sm" type="button">내 기록</button>
+          <button id="btn-logout" class="btn-ghost btn-sm" type="button">로그아웃</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+
+    <!-- ============ 뷰 0 · 로그인 ============ -->
+    <section id="view-login" class="view-login">
+      <div class="login-inner">
+        <div class="login-brand">
+          <span class="login-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M15 9.5c-.7-1.1-1.8-1.7-3-1.7-1.9 0-3.8 1.6-3.8 4.2s1.9 4.2 3.8 4.2c1.2 0 2.3-.6 3-1.7" />
+            </svg>
+          </span>
+          <h2>AI 면접 연습실</h2>
+          <p class="login-tagline">무료 LLM 면접관과 함께하는 대학 입시 면접 연습</p>
+          <ul class="login-features">
+            <li>대학·학과별 빈출 주제로 만드는 제시문 면접</li>
+            <li>생기부 분석 기반 서류 면접 + 꼬리질문</li>
+            <li>문항 채점 · 문항별 코멘트 · 기록 저장</li>
+            <li>계정과 기록은 이 컴퓨터에서만 · 복구 코드로 복구</li>
+          </ul>
+        </div>
+        <div class="login-card card">
+          <h2 id="auth-title" class="card-title">로그인</h2>
+          <p id="logout-msg" class="logout-msg" hidden>로그아웃되었습니다. 다음에 또 만나요.</p>
+          <div class="auth-tabs" role="tablist">
+            <button type="button" class="auth-tab active" data-tab="login" role="tab">로그인</button>
+            <button type="button" class="auth-tab" data-tab="register" role="tab">회원가입</button>
+            <button type="button" class="auth-tab" data-tab="reset" role="tab">비밀번호 찾기</button>
+          </div>
+          <form id="auth-form" autocomplete="off">
+            <div class="field">
+              <label for="auth-username">아이디</label>
+              <input type="text" id="auth-username" maxlength="20" placeholder="2~20자 · 영문/숫자/한글/_" />
+            </div>
+            <div class="field" id="fld-password">
+              <label for="auth-password">비밀번호</label>
+              <input type="password" id="auth-password" maxlength="64" placeholder="4~64자" />
+            </div>
+            <div class="field" id="fld-recovery" hidden>
+              <label for="auth-recovery">복구 코드</label>
+              <input type="text" id="auth-recovery" maxlength="16" placeholder="회원가입 때 발급된 복구 코드 (대문자)" style="text-transform:uppercase" />
+              <p class="hint">복구 코드가 없다면 새 계정을 만들어 주세요. 계정을 되살릴 다른 방법은 없습니다.</p>
+            </div>
+            <p id="auth-msg" class="auth-msg"></p>
+            <button id="auth-submit" class="btn-primary btn-block" type="submit">로그인</button>
+          </form>
+          <div id="register-note" class="modal-note" hidden>
+            <p class="muted">회원가입을 완료하면 <strong>복구 코드</strong>가 발급됩니다. 아이디·비밀번호를 잊었을 때 계정을 되찾는 유일한 방법이므로 반드시 저장해 두세요.</p>
+          </div>
+          <div id="reset-note" class="modal-note" hidden>
+            <p class="muted">가입할 때 받은 복구 코드로 새 비밀번호를 설정합니다. 복구 코드가 없으면 계정을 되찾을 수 없으니 새 계정을 만들어 주세요.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 뷰 1 · 설정 ============ -->
+    <section id="view-setup" class="view" hidden>
+      <div class="card setup-card">
+        <h2 class="card-title">면접 연습 설정</h2>
+        <p class="muted">지원할 대학과 학과를 선택하고, 연습할 면접 유형을 고르세요.</p>
+
+        <div class="field">
+          <label for="sel-univ">1 · 대학 선택</label>
+          <div class="search-select-wrap">
+            <input type="text" id="search-univ" class="search-input" placeholder="대학명을 검색하세요 (예: 서울, 고려, KAIST...)" autocomplete="off" />
+            <select id="sel-univ">
+              <option value="">대학을 선택하세요</option>
+            </select>
+          </div>
+          <p id="univ-count" class="search-count hint"></p>
+        </div>
+
+        <div class="field">
+          <label for="sel-dept">2 · 학과 선택</label>
+          <div class="search-select-wrap">
+            <input type="text" id="search-dept" class="search-input" placeholder="학과명을 검색하세요 (예: 컴퓨터, 경영, 의학...)" autocomplete="off" disabled />
+            <select id="sel-dept" disabled>
+              <option value="">대학을 먼저 선택하세요</option>
+            </select>
+          </div>
+          <p id="dept-count" class="search-count hint"></p>
+        </div>
+
+        <div class="field">
+          <label>3 · 면접 유형 선택</label>
+          <div class="mode-cards">
+            <button type="button" class="mode-card" data-mode="passage">
+              <span class="mode-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                </svg>
+              </span>
+              <h3>제시문 면접</h3>
+              <p>대학·학과별 빈출 제시문 기반<br /><strong>2~3문항</strong> · 총 <strong>10~15분</strong></p>
+            </button>
+            <button type="button" class="mode-card" data-mode="document">
+              <span class="mode-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                </svg>
+              </span>
+              <h3>서류 기반 면접</h3>
+              <p>생기부 분석 기반<br /><strong>4~6문항</strong> + 꼬리질문 · 총 <strong>8~10분</strong></p>
+            </button>
+          </div>
+        </div>
+
+        <div class="field" id="qtime-field" hidden>
+          <label>4 · 문항 수 · 면접 시간</label>
+          <div class="qtime-row">
+            <div class="stepper">
+              <span class="stepper-name">문항 수</span>
+              <div class="stepper-controls">
+                <button type="button" class="stepper-btn" id="btn-q-minus" aria-label="문항 수 줄이기" disabled>&minus;</button>
+                <span id="q-count" class="stepper-val">3</span>
+                <button type="button" class="stepper-btn" id="btn-q-plus" aria-label="문항 수 늘리기">+</button>
+              </div>
+              <span id="q-range" class="stepper-range">2~3문항</span>
+            </div>
+            <div class="stepper">
+              <span class="stepper-name">면접 시간</span>
+              <div class="stepper-controls">
+                <button type="button" class="stepper-btn" id="btn-t-minus" aria-label="면접 시간 줄이기" disabled>&minus;</button>
+                <span id="t-min" class="stepper-val">12</span>
+                <button type="button" class="stepper-btn" id="btn-t-plus" aria-label="면접 시간 늘리기">+</button>
+              </div>
+              <span id="t-range" class="stepper-range">10~15분</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="field" id="record-field" hidden>
+          <label>5 · 학교생활기록부 파일</label>
+          <div id="drop-zone" class="drop-zone" tabindex="0" role="button" aria-label="생기부 파일 업로드">
+            <input type="file" id="record-file" accept=".html,.htm,.txt,.pdf,.docx" hidden />
+            <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            <p class="dz-main">생기부 파일을 끌어다 놓거나 <span class="dz-link">파일 선택</span></p>
+            <p class="hint">HTML · PDF · DOCX · TXT 지원 (10MB 이하) — 스캔 PDF는 지원하지 않습니다</p>
+          </div>
+          <div id="record-meta" class="record-meta" hidden>
+            <span id="record-fname" class="record-fname"></span>
+            <button id="btn-record-clear" class="btn-ghost btn-sm" type="button">제거</button>
+          </div>
+          <label for="record-text">추출된 텍스트 · 수정 가능</label>
+          <textarea id="record-text" rows="9" disabled
+            placeholder="파일을 첨부하면 생기부 텍스트가 여기에 표시됩니다. 오인식한 부분을 직접 고칠 수 있습니다."></textarea>
+          <p id="record-charcnt" class="hint">첨부한 파일에서 텍스트를 추출해 면접에 사용합니다. 이 컴퓨터 안에서만 처리됩니다.</p>
+        </div>
+
+        <button id="btn-start" class="btn-primary" type="button" disabled>AI 면접 시작</button>
+        <p id="start-hint" class="hint center">대학 · 학과 · 면접 유형을 선택하면 시작할 수 있습니다.</p>
+      </div>
+    </section>
+
+    <!-- ============ 뷰 2 · 면접 진행 ============ -->
+    <section id="view-interview" class="view" hidden>
+      <div class="interview-head">
+        <div class="timer-box">
+          <span class="timer-label">남은 시간</span>
+          <span id="timer" class="timer">12:00</span>
+        </div>
+        <div id="progress" class="progress">문항 0/0</div>
+      </div>
+
+      <div id="passage-panel" class="passage-panel" hidden>
+        <div class="pp-head">
+          <span class="pp-title">제시문</span>
+          <button id="btn-replay-passage" class="icon-btn" type="button" title="제시문 다시 듣기">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+              <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+              <path d="M19 5a9 9 0 0 1 0 14" />
+            </svg>
+          </button>
+        </div>
+        <div id="passage-text" class="pp-text"></div>
+      </div>
+
+      <div id="chat" class="chat" aria-live="polite"></div>
+
+      <div id="answer-zone" class="answer-zone">
+        <div id="mic-box" class="mic-box">
+          <button id="mic-btn" class="mic-btn" type="button" aria-label="마이크로 답변" disabled>
+            <svg viewBox="0 0 24 24" width="38" height="38" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="2" width="6" height="12" rx="3" />
+              <path d="M5 10v1a7 7 0 0 0 14 0v-1" />
+              <line x1="12" y1="19" x2="12" y2="22" />
+            </svg>
+          </button>
+          <div id="mic-label" class="mic-label">면접관 질문이 나오면<br />마이크를 눌러 답변하세요</div>
+        </div>
+
+        <div id="answer-box" class="answer-box" hidden>
+          <textarea id="answer-text" rows="4" maxlength="4000"
+            placeholder="음성 인식 결과입니다. 수정한 뒤 '답변 제출'을 누르거나, 직접 입력할 수도 있습니다."></textarea>
+          <div class="answer-actions">
+            <button id="btn-retry-mic" class="btn-ghost" type="button">다시 녹음</button>
+            <button id="btn-submit" class="btn-primary" type="button" disabled>답변 제출</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 뷰 3 · 종료 ============ -->
+    <section id="view-end" class="view" hidden>
+      <div class="card center end-card">
+        <span class="end-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </span>
+        <h2 class="end-title">면접이 끝났습니다.</h2>
+        <p class="muted">면접관이 모든 답변을 분석해 채점 결과를 준비했어요.</p>
+        <button id="btn-score" class="btn-primary btn-lg" type="button">점수 확인</button>
+      </div>
+    </section>
+
+    <!-- ============ 뷰 4 · 점수 ============ -->
+    <section id="view-score" class="view" hidden>
+      <div class="card center score-summary">
+        <h2 id="score-title" class="card-title">면접 점수</h2>
+        <div class="gauge-wrap">
+          <div class="gauge" id="gauge"></div>
+          <div class="gauge-center">
+            <span id="final-score" class="final-score">–</span>
+            <span class="final-unit">/ 100</span>
+          </div>
+        </div>
+        <p id="score-grade" class="score-grade"></p>
+        <p id="score-feedback" class="muted"></p>
+      </div>
+
+      <div class="score-cols">
+        <div class="card">
+          <h3 class="card-title-sm">문항별 채점</h3>
+          <div id="q-scores" class="q-scores"></div>
+        </div>
+        <div class="card">
+          <h3 class="card-title-sm" id="cat-title">채점 항목 평균</h3>
+          <div id="cat-scores" class="cat-scores"></div>
+          <p id="disposition" class="hint disposition"></p>
+          <p id="weights-note" class="hint"></p>
+        </div>
+      </div>
+
+      <div id="comp-section" class="card comp-card" hidden>
+        <h3 class="card-title-sm">종합 피드백</h3>
+        <div id="comp-body"></div>
+        <div id="comp-loading" class="comp-loading" hidden>
+          <span class="spinner" aria-hidden="true"></span>
+          <span>종합 피드백과 문항별 의도·모범답안을 분석하고 있습니다. (1~2분 소요)...</span>
+        </div>
+      </div>
+
+      <div id="trv-section" class="card trv-card" hidden>
+        <h3 class="card-title-sm">문항별 리뷰</h3>
+        <div id="trv-body"></div>
+        <div id="trv-loading" class="comp-loading" hidden>
+          <span class="spinner" aria-hidden="true"></span>
+          <span>문항별 답변을 검토하고 있습니다...</span>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="btn-save-record" class="btn-primary" type="button" hidden>이 면접 기록 저장</button>
+        <button id="btn-retry" class="btn-primary" type="button">다시 연습하기</button>
+        <button id="btn-home" class="btn-ghost" type="button">처음으로</button>
+      </div>
+    </section>
+
+    <!-- ============ 뷰 5 · 내 기록 ============ -->
+    <section id="view-records" class="view" hidden>
+      <div class="card">
+        <div class="rec-head">
+          <h2 class="card-title">내 면접 기록</h2>
+          <button id="btn-records-back" class="btn-ghost btn-sm" type="button">← 돌아가기</button>
+        </div>
+        <p class="muted">저장한 면접의 점수와 피드백, 문항별 의도·모범답안을 다시 볼 수 있습니다.<br />
+          ⚠️ 기록은 이 컴퓨터의 서버에만 저장됩니다. <button id="btn-backup" class="link-btn" type="button">백업 내려받기</button>로 보관하고, 백업 파일은 <button id="btn-restore" class="link-btn" type="button">복원</button>할 수 있습니다.
+          <input type="file" id="restore-file" accept=".json,.txt" hidden /></p>
+      </div>
+      <div class="card">
+        <div id="records-list" class="records-list"></div>
+        <p id="records-empty" class="hint center" hidden>저장된 기록이 없습니다.<br />면접을 진행하고 점수 화면에서 '이 면접 기록 저장'을 누르면 여기에 보관됩니다.</p>
+      </div>
+    </section>
+
+    <!-- ============ 뷰 6 · 기록 다시 보기 ============ -->
+    <section id="view-record" class="view" hidden>
+      <div class="card center score-summary">
+        <h2 id="recv-title" class="card-title">기록 다시 보기</h2>
+        <div class="gauge-wrap">
+          <div class="gauge" id="recv-gauge"></div>
+          <div class="gauge-center">
+            <span id="recv-final" class="final-score">–</span>
+            <span class="final-unit">/ 100</span>
+          </div>
+        </div>
+        <p id="recv-grade" class="score-grade"></p>
+        <p id="recv-feedback" class="muted"></p>
+      </div>
+
+      <div class="score-cols">
+        <div class="card">
+          <h3 class="card-title-sm">문항별 채점</h3>
+          <div id="recv-q-scores" class="q-scores"></div>
+        </div>
+        <div class="card">
+          <h3 class="card-title-sm" id="recv-cat-title">채점 항목 평균</h3>
+          <div id="recv-cat-scores" class="cat-scores"></div>
+          <p id="recv-disposition" class="hint disposition"></p>
+          <p id="recv-weights-note" class="hint"></p>
+        </div>
+      </div>
+
+      <div id="recv-comp" class="card comp-card" hidden>
+        <h3 class="card-title-sm">종합 피드백</h3>
+        <div id="recv-comp-body"></div>
+      </div>
+
+      <div id="recv-trv" class="card trv-card" hidden>
+        <h3 class="card-title-sm">문항별 리뷰</h3>
+        <div id="recv-trv-body"></div>
+      </div>
+
+      <div class="actions">
+        <button id="btn-record-delete" class="btn-danger" type="button">이 기록 삭제</button>
+        <button id="btn-records-again" class="btn-primary" type="button">다시 연습하기</button>
+        <button id="btn-records-back2" class="btn-ghost" type="button">내 기록으로</button>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="foot">
+    <p>모든 AI 응답은 opencode zen <strong>무료 모델</strong>로 생성됩니다 · 생기부 데이터는 로컬에서만 처리됩니다</p>
+  </footer>
+
+  <!-- ============ 복구 코드 발급 모달 ============ -->
+  <div id="rc-modal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rc-title">
+      <h2 id="rc-title" class="modal-title">복구 코드를 꼭 저장하세요</h2>
+      <p class="muted">이 코드가 아이디·비밀번호를 잊었을 때 계정을 복구하는 <strong>유일한 방법</strong>입니다. 지금 메모하거나 파일로 저장해 두세요. 이 화면을 닫으면 다시 볼 수 없습니다.</p>
+      <div class="rc-code-wrap">
+        <code id="rc-code" class="rc-code"></code>
+        <button id="rc-copy" class="btn-ghost btn-sm" type="button">복사</button>
+      </div>
+      <div class="actions">
+        <button id="rc-download" class="btn-ghost" type="button">파일로 저장</button>
+        <button id="rc-confirm" class="btn-primary" type="button">저장했습니다</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
