@@ -3,6 +3,20 @@
 > 이 파일은 컨텍스트 컴팩션과 무관하게 감사 현황을 영속화하기 위한 체크포인트다.
 > 수정 시 마다 업데이트할 것. 마지막 업데이트: 2026-09-10
 
+## 저학과 대학 ipsitalk 리동기화 (완료 — 2026-09-10)
+
+**371개 대학 / 12,400개 학과** (기존 373 / 8,333 → +4,067). 기존 확장 세션에서 병합이 누락됐던 저학과 구아이디 대학들을 ipsitalk 마스터(`/tmp/merged_schools.json`)에 다시 매칭해 리동기화:
+
+- **RESYNC 113개 대학 / +4,084학과 추가**: 매칭 성공한 모든 저학과 구아이디 대학 (변화 없음 판정됐던 서울 56→112, 경상국립 75→119, 부산 88→120, 외대 30대→105, 경희 40→109, 중앙 36→48, 한양 40→81 포함)
+- **제외 (보호 8곳)**: kangnam, korea_catholic, kangwon, geoje, konkuk, konyang, kyonggi, gyeongnam — 기감사 완료 대학
+- **제외 (완성 리네임 8곳)**: 국립창원·국립목포·국립공주·국립부경·한밭·한국해양·한국교통·군산 — 이름 변경 시 전면 교체 완료
+- **제외 (매칭 불가 7곳 — 유지)**: 한국폴리텍·한국폴리텍Ⅱ·한국폴리텍(서울)·서울가톨릭·한국산업기술·안동 (ipsitalk 누락), 영산 (양산/해운대 캠퍼스 분리 — 단일 매칭 불가, 36학과 유지)
+- **수의예과 보강 재적용 (변화없음 판정 철회 10곳)**: 서울·충북·충남·전북·경북·경상국립·제주·강원(보호)+금오공과·순천 — 2차 확장 당시 merged 배열 누락 버그로 빠졌던 수의예과/수의학과 등을 이번에 반영
+- **제거 2곳**: 한경대(hankyong — 한경국립대 구명칭 중복), 진주대(jinju — ipsitalk 429개 마스터에 없음, 8개 졸속학과 가짜 데이터, 부산대(부산) 유사 선례)
+- **축약 규칙 버그 수정**: 괄호 제거 **후** 전공/트랙/심화 검사 (기존엔 괄호 제거 전 검사라 "(전공)" 한글 트랙이 살아남던 문제)
+- **커스텀 콘텐츠 복원**: 재생성 후 HEAD(969fb87) 대학원본에서 학과명 매칭으로 passage/hint/disposition/weights 복원 — 8,316학과 복원, kangnam 20학과 **byte-equal** 확인
+- **검증**: raw ↔ app 학과 0건 차이 / `npm run check` 통과 / 서버 재시작 후 `/api/universities` → 371개 대학·12,400학과 정상 로드, passage 누락 대학 0곳
+
 ## 전국 대학 전수 확장 (완료 — 2026-09-10)
 
 **373개 대학 / 8,333개 학과** (기존 140 → 373). ipsitalk 429개 마스터 데이터(`/tmp/merged_schools.json`) 기반 전수 병합:
@@ -19,8 +33,8 @@
 
 ## 데이터 파일 구조 (검증 완료)
 
-- `universities.json` → `{ universities: [{id, name, departments:[{id, name, passage, modelAnswerHint, disposition, weights}]}], defaultWeights: {...} }` (373개 대학)
-- `raw-universities/index.js` → `[ [id, 한글명, 등급(MID_PRI/MID_NAT/...), [학과명, ...]], ... ]` (373개 엔트리)
+- `universities.json` → `{ universities: [{id, name, departments:[{id, name, passage, modelAnswerHint, disposition, weights}]}], defaultWeights: {...} }` (371개 대학)
+- `raw-universities/index.js` → `[ [id, 한글명, 등급(MID_PRI/MID_NAT/...), [학과명, ...]], ... ]` (371개 엔트리)
 
 ## 로컬 데이터 일관성 감사 (완료 — 2026-09-09 ~ 2026-09-10)
 
