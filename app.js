@@ -130,6 +130,8 @@ const el = {
   compBody: $('comp-body'),
   compLoading: $('comp-loading'),
   trvSection: $('trv-section'),
+  anSection: $('an-section'),
+  anBody: $('an-body'),
   trvBody: $('trv-body'),
   trvLoading: $('trv-loading'),
   btnSaveRecord: $('btn-save-record'),
@@ -900,8 +902,11 @@ async function startInterview() {
   S.transcript = [];
   S.comprehensive = null;
   S.compBusy = false;
+  S.docAnalysis = '';
+  S.docQuestionNotes = [];
   el.compSection.hidden = true;
   el.trvSection.hidden = true;
+  el.anSection.hidden = true;
   el.btnSaveRecord.hidden = true;
 
   switchView('interview');
@@ -935,7 +940,11 @@ async function startInterview() {
     } else {
       const r = await callLLM(docStartPrompt());
       removeMsg(ty);
-      addBot(String(r.analysis || '생기부를 분석했습니다.'), { tag: '면접관 분석', speakIt: true });
+      S.docAnalysis = String(r.analysis || '');
+      S.docQuestionNotes = (Array.isArray(r.questions) ? r.questions : []).map((q) => {
+        const obj = (typeof q === 'object' && q) ? q : {};
+        return { question: String(obj.question || obj.text || ''), basedOn: String(obj.basedOn || '') };
+      }).slice(0, S.qCount);
       const qs = Array.isArray(r.questions) ? r.questions : [];
       if (!qs.length) throw new Error('면접관이 질문을 생성하지 못했습니다.');
       S.questions = qs.slice(0, S.qCount);
@@ -1216,6 +1225,29 @@ function paintScore(targets, scores, mode, meta = {}) {
   targets.weightsNote.textContent = meta.weightsNote;
 }
 
+function renderAnalysis() {
+  if (S.mode !== 'document') { el.anSection.hidden = true; return; }
+  if (!S.docAnalysis && !S.docQuestionNotes.length) { el.anSection.hidden = true; return; }
+  el.anSection.hidden = false;
+  const compQuestions = (S.comprehensive && Array.isArray(S.comprehensive.questions)) ? S.comprehensive.questions : [];
+  const rows = S.docQuestionNotes.map((n, i) => {
+    const cq = compQuestions[i] || {};
+    const tr = S.transcript[i];
+    const ans = tr ? tr.answer : '';
+    return `<div class="an-row">
+      <div class="an-head"><span>문항 ${i + 1}</span></div>
+      <p class="an-q"><strong>질문:</strong> ${esc(n.question)}</p>
+      ${ans ? `<p class="an-ans"><strong>들어온 답변:</strong> ${esc(ans)}</p>` : ''}
+      ${n.basedOn ? `<p class="an-base"><strong>질문 근거 (생기부):</strong> ${esc(n.basedOn)}</p>` : ''}
+      ${cq.intent ? `<p class="an-intent"><strong>평가 의도:</strong> ${esc(cq.intent)}</p>` : ''}
+      ${cq.betterAnswer ? `<p class="an-better"><strong>더 나은 답변 방향:</strong> ${esc(cq.betterAnswer)}</p>` : ''}
+    </div>`;
+  }).join('');
+  el.anBody.innerHTML = `
+    ${S.docAnalysis ? `<p class="an-analysis"><strong>생기부 분석:</strong> ${esc(S.docAnalysis)}</p>` : ''}
+    ${rows ? `<h4 class="comp-h">문항별 질문 의도</h4>${rows}` : ''}`;
+}
+
 function showScore() {
   const { n } = computeAggregates();
   if (!n) { toast('채점된 답변이 없습니다. 다시 면접을 진행해 주세요.'); return; }
@@ -1227,6 +1259,7 @@ function showScore() {
   el.btnSaveRecord.hidden = !S.token;
   renderComprehensive();
   renderTranscriptReview();
+  renderAnalysis();
   switchView('score');
 }
 
@@ -1322,6 +1355,7 @@ async function generateComprehensive() {
     if (S.view === 'score') {
       renderComprehensive();
       renderTranscriptReview();
+      renderAnalysis();
     }
   }
 }
@@ -1569,10 +1603,13 @@ function resetInterview(full) {
   S.transcript = [];
   S.comprehensive = null;
   S.compBusy = false;
+  S.docAnalysis = '';
+  S.docQuestionNotes = [];
   S.viewRecordsData = [];
   S.currentRecord = null;
   el.compSection.hidden = true;
   el.trvSection.hidden = true;
+  el.anSection.hidden = true;
   el.btnSaveRecord.hidden = true;
   if (full) {
     S.univ = null; S.dept = null; S.mode = null;
