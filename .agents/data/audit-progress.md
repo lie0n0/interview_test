@@ -64,7 +64,7 @@
 
 - [완료] 이전: gachon (가천대, 정보보호학과 추가됨 — 이전 세션)
 - [완료] B1: korea_catholic, kangnam, gangneung_wonju, kangwon (2026-09-10 confirm)
-- [대기] B2: geoje, konkuk, konyang, kyonggi, gyeongnam
+- [완료] B2: geoje, konkuk, konyang, kyonggi, gyeongnam (2026-09-10 확인)
 - [대기] B3: gyeongbuk, gyeongnam_national, kyungsung, ginue, kyungil
 - [대기] B4: kyunghee, keimyung, korea, kosin, kongju
 - [대기] B5: kwangwoon, gists, gnue, gwangju, kwu
@@ -96,8 +96,8 @@
 
 ## 데이터 밀도 (139개 기준 — 2026-09-10 재계산, 우선순위 참고)
 
-- 평균 23.7학과 (총 3292학과/139개), **15학과 이하 49개 대학** — 저밀도 우선 감사
-- 최소: danguk(3), geoje(5), gumi(5), gimcheon(5), daegu_national_edu(6)
+- 평균 24.3학과 (총 3377학과/139개), **15학과 이하 48개 대학** — 저밀도 우선 감사
+- 최소: danguk(3), gumi(5), gimcheon(5), daegu_national_edu(6)
 
 ## 발견 사항 (출처 필수)
 
@@ -112,7 +112,25 @@
 - **kangwon (강원대학교)**: **107학과 — 이상치 아님** (2026 강릉원주 통합 반영). 춘천캠퍼스(인문·사회·경영·농생명·자연·공과·IT·사범·수의·약·의·간호대) + 삼척캠퍼스(인문사회·공학·디자인스포츠대) + 도계캠퍼스(보건과학대) 통합 기준. 확인 사항: 경제·정보통계학부(경제학과·국제통상학과 통합), 경영·회계학부(회계학과 통합) — 옛 학과명이 학부명에 흡수된 것 확인.
   - 출처: https://www.namu.moe/w/강원대학교/학부 (2026 학과 편성표), https://wwwk.kangwon.ac.kr/www/contents.do?key=1791 (자연과학대학)
 
-### 데이터 밀도 분포 (참고 — 2026-09-10 재계산)
+### B2 (geoje, konkuk, konyang, kyonggi, gyeongnam) (2026-09-10 완료)
+
+- **geoje (거제대학교)**: 5 → **10학과**. 공식 2026학년도 모집단위 기준으로 재구성.
+  - 출처: https://enter.koje.ac.kr/enter/content/9 (2026학년도 모집학과·인원 안내)
+- **konkuk (건국대학교)**: 36 → **63학과**. ipsitalk 편제 71개 → 축약 규칙(학부/학과 레벨만 유지, 전공 세분·특수단위 제외) 적용.
+  - 출처: https://uni.ipsitalk.net/school.php?slug=%EA%B1%B4%EA%B5%AD%EB%8C%80%ED%95%99%EA%B5%90 (71개 편제, 2026-02-19 기준)
+- **konyang (건양대학교)**: 10 → **38학과**.
+  - 출처: https://ipsi.konyang.ac.kr/ipsi/sub07_01.do (입학처 학과소개 — 의과대학~사회과학학술원 38개)
+- **kyonggi (경기대학교)**: 45 → **37학과**. ipsitalk 84개 편제 → 학부 재편 반영, 제2캠퍼스 12개·일반대학원 등 특수단위 제외.
+  - 출처: https://uni.ipsitalk.net/school.php?slug=%EA%B2%BD%EA%B8%B0%EB%8C%80%ED%95%99%EA%B5%90 (84개 편제)
+- **gyeongnam (경남대학교)**: 18 → **51학과**. ipsitalk 83개 편제 → 축약 규칙 적용.
+  - 출처: https://uni.ipsitalk.net/school.php?slug=%EA%B2%BD%EB%82%A8%EB%8C%80%ED%95%99%EA%B5%90 (83개 편제)
+
+**B2 검증 (2026-09-10):**
+- 총 139개 대학 / 3377학과 (기존 3292 + B2 순변동 +85: geoje+5, konkuk+27, konyang+28, kyonggi−8, gyeongnam+33)
+- **kangnam 주의사항**: 재생성 시 B2 외 커스텀 대학(kangnam)이 템플릿 기본 passage로 덮이는 문제 발생 → `universities.json.pre-b2` 백업에서 **byte-equal 복원** 후 재검증 완료. 이후 재생성 시 반드시 백업 대조 필요.
+- raw ↔ app: B2 5개 대학 학과명·순서·수 전부 일치 / `npm run check` 통과 / 서버 재기동 후 `/api/universities` → 139개 대학·3377학과 정상 로드
+
+### 데이터 밀도 분포 (참고 — 2026-09-10 B2 반영 재계산)
 ```
-3: danguk | 5: geoje, gumi, gimcheon | 6: daegu_national_edu, daejin, duksung, busan_national_edu | 7: gimhae, tongmyong, induk, karts, korea_open2, korea_open_univ | 8: gwangju, sangji, korea_catholic_seoul, semyung, shinhan, yeungjin, jinju, korea_tech, kat, korea_maritime | 9: daegu_catholic, suncheonhyang, silla, woosuk, inje, hankyong, polytech, hanshin | 10: konyang, gnue, sahmyook, seoul_arts, unist, korea_national_education | 11: ginue, gists, kcarts | 12: snue, changwon, hansung | 13: gyeongnam_national, kunsan, postech | 14: handong | 15: chugye | 16: mokpo_national, seoul_tech, chongshin, kaist, hallym | 17: ulsan | 18: gyeongnam, daegu, skhu, kpu | 19: seoul_city, wonkwang | 20: kangnam, bufs, sungshin_w, eulji, korea_u, kau | 21: incheon, hongik | 22: kwangwoon | 23: keimyung, sungshin, jeju | 24: kumoh, nazarene | 25: donga, sookmyung, woosong | 26: gunmin, dongduk, myongji, seokyeong | 28: kosin, chungbuk, pyeongtaek | 29: nambu, sejong, u1, jeonnam, jeonbuk | 30: anyang, yeungnam, chungnam | 31: kwu, dongguk, seogang, soongsil | 32: nsu, baekseok, yongin, hanbat | 33: kyungil, dongseo | 34: gyeongbuk, sungkyunkwan | 35: paichai, andong | 36: konkuk, dankook, dongshin, mokwon, sunchon, youngsan, chungang | 37: sunmoon, joongbu | 38: dhu, ajou, honam | 40: kyunghee, hanyang, hoseo | 41: suwon | 42: kongju, hannam | 43: kyungsung, daejeon_u, pusan, cheongju | 44: dongeui | 45: korea_catholic, kyonggi, pknu | 46: yonsei | 48: korea | 53: gachon, ewha | 54: seoul | 107: kangwon
+3: danguk | 5: gimcheon, gumi | 6: busan_national_edu, daegu_national_edu, daejin, duksung | 7: gimhae, induk, karts, korea_open2, korea_open_univ, tongmyong | 8: gwangju, jinju, kat, korea_catholic_seoul, korea_maritime, korea_tech, sangji, semyung, shinhan, yeungjin | 9: daegu_catholic, hankyong, hanshin, inje, polytech, silla, suncheonhyang, woosuk | 10: geoje, gnue, korea_national_education, sahmyook, seoul_arts, unist | 11: ginue, gists, kcarts | 12: changwon, hansung, snue | 13: gyeongnam_national, kunsan, postech | 14: handong | 15: chugye | 16: chongshin, hallym, kaist, mokpo_national, seoul_tech | 17: ulsan | 18: daegu, kpu, skhu | 19: seoul_city, wonkwang | 20: bufs, eulji, kangnam, kau, korea_u, sungshin_w | 21: hongik, incheon | 22: kwangwoon | 23: jeju, keimyung, sungshin | 24: kumoh, nazarene | 25: donga, sookmyung, woosong | 26: dongduk, gunmin, myongji, seokyeong | 28: chungbuk, kosin, pyeongtaek | 29: jeonbuk, jeonnam, nambu, sejong, u1 | 30: anyang, chungnam, yeungnam | 31: dongguk, kwu, seogang, soongsil | 32: baekseok, hanbat, nsu, yongin | 33: dongseo, kyungil | 34: gyeongbuk, sungkyunkwan | 35: andong, paichai | 36: chungang, dankook, dongshin, mokwon, sunchon, youngsan | 37: joongbu, kyonggi, sunmoon | 38: ajou, dhu, honam, konyang | 40: hanyang, hoseo, kyunghee | 41: suwon | 42: hannam, kongju | 43: cheongju, daejeon_u, kyungsung, pusan | 44: dongeui | 45: korea_catholic, pknu | 46: yonsei | 48: korea | 51: gyeongnam | 53: ewha, gachon | 54: seoul | 63: konkuk | 107: kangwon
 ```
