@@ -18,3 +18,4 @@ node_modules/
 
 # 데이터 백업
 .agents/data/universities.json.bak*
+.agents/data/universities.json.pre-*
