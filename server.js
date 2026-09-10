@@ -10,8 +10,8 @@
  *   → http://localhost:3333
  *
  * 필요한 것:
- *   - opencode CLI 설치 (curl -fsSL https://opencode.ai/install | bash)
- *   - opencode zen 로그인 (/connect) — 무료 모델만 사용
+ *   - opencode CLI (없으면 시작 시 자동 설치 시도 — Render 포함)
+ *   - zen 무료 모델은 로그인 없이 익명 사용 가능 (cost 0)
  */
 'use strict';
 
@@ -20,7 +20,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 const crypto = require('node:crypto');
-const { spawn } = require('node:child_process');
+const os = require('node:os');
+const { spawn, spawnSync } = require('node:child_process');
 
 const PORT = Number(process.env.PORT || 3000);
 const ROOT = __dirname;
@@ -178,6 +179,46 @@ function destroySession(token) {
   saveSessions(sessions);
 }
 
+/* ===================== opencode 자동 점검 ===================== */
+
+/**
+ * opencode CLI가 없는 환경(예: Render 컨테이너)에서 자동 설치한다.
+ * zen 무료 모델은 로그인·자격증명 없이 익명으로 동작하므로 바이너리만 있으면 된다.
+ */
+function ensureOpencode() {
+  try {
+    const r = spawnSync('opencode', ['--version'], { stdio: 'ignore', timeout: 15000 });
+    if (r.status === 0) return { ok: true, source: 'PATH' };
+  } catch { /* PATH에 없음 — 아래에서 처리 */ }
+
+  const localBin = path.join(os.homedir(), '.opencode', 'bin');
+  const localBinExe = path.join(localBin, 'opencode');
+
+  // 설치 스크립트의 기본 경로($HOME/.opencode/bin)에 이미 설치된 경우
+  if (fs.existsSync(localBinExe)) {
+    if (!process.env.PATH.split(path.delimiter).includes(localBin)) {
+      process.env.PATH = `${localBin}${path.delimiter}${process.env.PATH}`;
+    }
+    return { ok: true, source: '~/.opencode/bin' };
+  }
+
+  // 공식 설치 스크립트 (--no-modify-path: 셸 설정 파일 수정 방지)
+  try {
+    const r = spawnSync(
+      'bash',
+      ['-c', 'curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path'],
+      { stdio: 'inherit', timeout: 180000, env: { ...process.env, NO_COLOR: '1' } }
+    );
+    if (r.status === 0 && fs.existsSync(localBinExe)) {
+      process.env.PATH = `${localBin}${path.delimiter}${process.env.PATH}`;
+      return { ok: true, source: '설치 스크립트' };
+    }
+    return { ok: false, error: `설치 스크립트 종료 코드 ${r.status ?? '알 수 없음'}` };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
 /* ===================== LLM 호출 ===================== */
 
 /**
@@ -209,7 +250,11 @@ function callOpenCode(model, prompt, timeoutMs) {
       if (settled) return;
       settled = true;
       clearTimeout(kill);
-      reject(new Error(`opencode 실행 실패: ${e.message}`));
+      if (e.code === 'ENOENT') {
+        reject(new Error('opencode 실행 실패: opencode CLI가 없습니다. 서버 시작 시 자동 설치를 시도했지만 실패했습니다. (수동 설치: curl -fsSL https://opencode.ai/install | bash)'));
+      } else {
+        reject(new Error(`opencode 실행 실패: ${e.message}`));
+      }
     });
     child.on('close', (code) => {
       if (settled) return;
@@ -719,6 +764,13 @@ const server = http.createServer(async (req, res) => {
 
   return send(res, 404, { ok: false, error: 'Not Found' });
 });
+
+const opencodeCheck = ensureOpencode();
+if (opencodeCheck.ok) {
+  console.log(`[정보] opencode 확인: ${opencodeCheck.source} (${MODELS.interviewer})`);
+} else {
+  console.error(`[경고] opencode 자동 설치 실패: ${opencodeCheck.error} — LLM 면접 불가. 수동 설치: curl -fsSL https://opencode.ai/install | bash`);
+}
 
 server.listen(PORT, () => {
   console.log('');
