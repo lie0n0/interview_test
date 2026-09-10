@@ -16,6 +16,7 @@
 'use strict';
 
 const http = require('node:http');
+const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
@@ -54,6 +55,10 @@ const MODELS = {
   interviewer: 'opencode/nemotron-3-ultra-free', // 기본 면접관·채점 (검증됨, cost 0)
   fallback: 'opencode/mimo-v2.5-free',            // 폴백 (검증됨, cost 0)
 };
+
+/** Render 컨테이너 여부 (Render가 자동 설정) + zen 직접 호출용 세션 ID */
+const ON_RENDER = process.env.RENDER === 'true';
+const ZEN_SESSION_ID = crypto.randomUUID();
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -225,6 +230,55 @@ async function ensureOpencode() {
 /* ===================== LLM 호출 ===================== */
 
 /**
+ * zen OpenAI-호환 엔드포인트 직접 호출 (opencode CLI 없이 — Render OOM 회피).
+ * CLI와 동일한 무료 모델을 사용하며, 익명 세션 ID면 충분하다 (cost 0).
+ */
+function callZenDirect(modelId, prompt, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      model: modelId.replace(/^opencode\//, ''),
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const req = https.request(
+      {
+        hostname: 'opencode.ai',
+        path: '/zen/v1/chat/completions',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+          'x-opencode-session': ZEN_SESSION_ID,
+        },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (d) => (data += d));
+        res.on('end', () => {
+          if (res.statusCode !== 200) {
+            reject(new Error(`zen 직접 호출 실패: HTTP ${res.statusCode} — ${data.slice(0, 200)}`));
+            return;
+          }
+          try {
+            const content = JSON.parse(data).choices?.[0]?.message?.content;
+            if (typeof content !== 'string' || !content.trim()) {
+              reject(new Error('zen 직접 호출 실패: content 없음'));
+              return;
+            }
+            resolve(content);
+          } catch {
+            reject(new Error('zen 직접 호출 실패: 응답 파싱 오류'));
+          }
+        });
+      }
+    );
+    req.on('error', (e) => reject(new Error(`zen 직접 호출 실패: ${e.message}`)));
+    req.setTimeout(timeoutMs, () => req.destroy(new Error('zen 직접 호출 시간 초과')));
+    req.write(body);
+    req.end();
+  });
+}
+
+/**
  * `opencode run --model <id> --format json <prompt>` 실행
  * stdout의 JSONL 이벤트 스트림에서 type:"text" 이벤트의 part.text만 추출한다.
  */
@@ -236,7 +290,9 @@ async function callOpenCode(model, prompt, timeoutMs) {
       'opencode',
       ['run', '--model', model, '--format', 'json', prompt],
       // stdin은 닫는다(ignore). 열린 파이프로 두면 opencode run이 stdin 대기로 멈춘다.
-      { cwd: ROOT, env: { ...process.env, NO_COLOR: '1' }, stdio: ['ignore', 'pipe', 'pipe'] }
+      // cwd는 빈 임시 디렉토리로 둔다 — 저장소를 cwd로 쓰면 7MB 데이터 파일까지
+      // 프로젝트 컨텍스트로 인덱싱해 메모리·토큰을 폭증시킨다 (Render free OOM 원인).
+      { cwd: os.tmpdir(), env: { ...process.env, NO_COLOR: '1' }, stdio: ['ignore', 'pipe', 'pipe'] }
     );
     let out = '';
     let errOut = '';
@@ -356,9 +412,15 @@ async function llm(prompt, { model = 'interviewer', strict = false, timeoutMs = 
     ? prompt +
       '\n\n(중요: 오직 유효한 JSON 객체 하나만 출력하라. 마크다운, 코드 펜스, 설명 텍스트는 절대 포함하지 말 것.)'
     : prompt;
-  const { stdout } = await callOpenCode(modelId, finalPrompt, timeoutMs);
-  const text = extractCompletion(stdout).trim();
-  const json = extractJson(text);
+  let text;
+  try {
+    text = await callZenDirect(modelId, finalPrompt, timeoutMs);
+  } catch (e) {
+    if (ON_RENDER) throw e;
+    const { stdout } = await callOpenCode(modelId, finalPrompt, timeoutMs);
+    text = extractCompletion(stdout).trim();
+  }
+  const json = extractJson(text.trim());
   if (!json) throw new Error('LLM 응답에서 JSON을 찾지 못했습니다.');
   return { json, text };
 }
@@ -771,7 +833,10 @@ const server = http.createServer(async (req, res) => {
 });
 
 // opencode 자동 점검은 백그라운드로 — listen 차단 없이 health check 통과
-const opencodeReady = ensureOpencode();
+// Render에서는 CLI를 쓰지 않으므로(직접 호출 전용) 설치를 건너뛴다
+const opencodeReady = ON_RENDER
+  ? Promise.resolve({ ok: true, source: 'zen 직접 호출 (CLI 미사용)' })
+  : ensureOpencode();
 opencodeReady.then((r) => {
   if (r.ok) {
     console.log(`[정보] opencode 확인: ${r.source} (${MODELS.interviewer})`);
