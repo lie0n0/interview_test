@@ -198,15 +198,46 @@ function esc(s) {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-/* ---------------- 계정 인증 ---------------- */
+/* ---------------- 계정 인증 (localStorage 기반 — 서버 재시작에도 유지) ---------------- */
 
 const TOKEN_KEY = 'ai_interview_token';
+const USERS_KEY = 'ai_interview_users';
 
 function loadToken() {
   try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; }
 }
 function saveToken(t) {
   try { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); } catch {}
+}
+
+function loadUsersLocal() {
+  try { return JSON.parse(localStorage.getItem(USERS_KEY) || '{}'); } catch { return {}; }
+}
+function saveUsersLocal(users) {
+  try { localStorage.setItem(USERS_KEY, JSON.stringify(users)); } catch (e) { console.error(e); }
+}
+
+function loadRecordsLocal(username) {
+  try { return JSON.parse(localStorage.getItem('ai_interview_records_' + username) || '[]'); } catch { return []; }
+}
+function saveRecordsLocal(username, records) {
+  try { localStorage.setItem('ai_interview_records_' + username, JSON.stringify(records)); } catch (e) { console.error(e); }
+}
+
+async function sha256(text) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+function randomSalt() {
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  return Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+function makeRecoveryCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let c = '';
+  for (let i = 0; i < 5; i++) c += chars[crypto.getRandomValues(new Uint8Array(1))[0] % chars.length];
+  return c;
 }
 
 async function api(path, opts = {}) {
@@ -253,22 +284,39 @@ async function submitAuth(e) {
   el.authMsg.textContent = '';
   el.authSubmit.disabled = true;
   try {
+    const users = loadUsersLocal();
     if (authTab === 'register') {
-      const r = await api('/api/register', { method: 'POST', body: JSON.stringify({ username, password }) });
-      if (!r.recoveryCode) throw new Error('복구 코드를 받지 못했습니다. 다시 시도해 주세요.');
-      setSession(r.token, r.username);
+      if (users[username]) throw new Error('이미 사용 중인 아이디입니다.');
+      const salt = randomSalt();
+      const recoveryCode = makeRecoveryCode();
+      users[username] = {
+        salt,
+        passHash: await sha256(salt + password),
+        recoveryCodeHash: await sha256(salt.toUpperCase() + recoveryCode),
+        createdAt: Date.now(),
+      };
+      saveUsersLocal(users);
+      setSession(username, username);
       switchView('setup');
-      showRecoveryCode(r.recoveryCode);
+      showRecoveryCode(recoveryCode);
     } else if (authTab === 'reset') {
-      const r = await api('/api/reset-password', { method: 'POST', body: JSON.stringify({ username, recoveryCode: recovery, newPassword: password }) });
-      setSession(r.token, r.username);
+      const u = users[username];
+      if (!u) throw new Error('아이디 또는 복구 코드가 올바르지 않습니다.');
+      const codeHash = await sha256(u.salt.toUpperCase() + recovery);
+      if (u.recoveryCodeHash !== codeHash) throw new Error('아이디 또는 복구 코드가 올바르지 않습니다.');
+      u.salt = randomSalt();
+      u.passHash = await sha256(u.salt + password);
+      saveUsersLocal(users);
+      setSession(username, username);
       switchView('setup');
       toast('비밀번호가 재설정되고 로그인되었습니다.');
     } else {
-      const r = await api('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) });
-      setSession(r.token, r.username);
+      const u = users[username];
+      const passHash = await sha256((u ? u.salt : '') + password);
+      if (!u || u.passHash !== passHash) throw new Error('아이디 또는 비밀번호가 올바르지 않습니다.');
+      setSession(username, username);
       switchView('setup');
-      toast(`${r.username}님, 로그인되었습니다.`);
+      toast(username + '님, 로그인되었습니다.');
     }
   } catch (err) {
     el.authMsg.textContent = err.message;
@@ -285,7 +333,6 @@ function setSession(token, username) {
 }
 
 function logout() {
-  api('/api/logout', { method: 'POST', body: '{}' }).catch(() => {});
   S.token = '';
   S.username = '';
   saveToken('');
@@ -306,10 +353,9 @@ async function restoreSession() {
   const token = loadToken();
   if (!token) { updateAuthUI(); switchView('login'); return; }
   S.token = token;
-  try {
-    const me = await api('/api/me');
-    S.username = me.username;
-  } catch {
+  const users = loadUsersLocal();
+  S.username = users[token] ? token : '';
+  if (!S.username) {
     S.token = '';
     saveToken('');
   }
@@ -1445,22 +1491,25 @@ async function saveRecord() {
   const comp = S.comprehensive ? { ...S.comprehensive, meta: compMeta() } : null;
   el.btnSaveRecord.disabled = true;
   try {
-    await api('/api/records', {
-      method: 'POST',
-      body: JSON.stringify({
-        mode: S.mode,
-        univName: S.univ ? S.univ.name : '',
-        deptName: S.dept ? S.dept.name : '',
-        total: finalTotal,
-        gradeWord: totalWord,
-        grade,
-        items: S.scores,
-        transcript: S.transcript,
-        overtimeSec: S.overtimeSec,
-        comprehensive: comp,
-      }),
+    const records = loadRecordsLocal(S.username);
+    records.unshift({
+      id: crypto.randomUUID
+        ? crypto.randomUUID()
+        : 'rec-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+      mode: S.mode,
+      univName: S.univ ? S.univ.name : '',
+      deptName: S.dept ? S.dept.name : '',
+      total: finalTotal,
+      gradeWord: totalWord,
+      grade,
+      items: S.scores,
+      transcript: S.transcript,
+      overtimeSec: S.overtimeSec || 0,
+      comprehensive: comp,
+      createdAt: Date.now(),
     });
-    toast('기록이 저장되었습니다.');
+    saveRecordsLocal(S.username, records);
+    toast('기록이 저장되었습니다 (이 브라우저에 보관).');
   } catch (e) {
     toast('저장 실패: ' + e.message, true);
   } finally {
@@ -1468,14 +1517,9 @@ async function saveRecord() {
   }
 }
 
-async function openRecords() {
-  try {
-    const r = await api('/api/records');
-    S.viewRecordsData = Array.isArray(r.records) ? r.records : [];
-  } catch (e) {
-    toast('기록을 불러오지 못했습니다: ' + e.message, true);
-    S.viewRecordsData = [];
-  }
+function openRecords() {
+  if (!S.username) { toast('로그인이 필요합니다.', true); return; }
+  S.viewRecordsData = loadRecordsLocal(S.username);
   renderRecords();
   switchView('records');
 }
@@ -1544,11 +1588,12 @@ function renderRecordTrv(rec) {
   el.recvTrvBody.innerHTML = t.map((item, i) => trvItemHtml(item, i, per)).join('');
 }
 
-async function deleteRecord() {
+function deleteRecord() {
   if (!S.currentRecord) return;
   if (!confirm('이 기록을 삭제할까요? 다시 되돌릴 수 없습니다.')) return;
   try {
-    await api('/api/records/' + encodeURIComponent(S.currentRecord.id), { method: 'DELETE' });
+    const records = loadRecordsLocal(S.username);
+    saveRecordsLocal(S.username, records.filter((r) => r.id !== S.currentRecord.id));
     toast('기록이 삭제되었습니다.');
     openRecords();
   } catch (e) {
@@ -1563,10 +1608,24 @@ function practiceAgainFromRecord() {
   switchView('setup');
 }
 
-async function downloadBackup() {
+function downloadBackup() {
+  if (!S.username) { toast('로그인이 필요합니다.', true); return; }
   try {
-    const r = await api('/api/backup', { method: 'POST', body: '{}' });
-    const blob = new Blob([r.data], { type: 'text/plain;charset=utf-8' });
+    const users = loadUsersLocal();
+    const me = users[S.username] || null;
+    const payload = {
+      app: 'ai-interview-lab',
+      version: 2,
+      exportedAt: Date.now(),
+      username: S.username,
+      salt: me ? me.salt : null,
+      passHash: me ? me.passHash : null,
+      recoveryCodeHash: me ? me.recoveryCodeHash : null,
+      createdAt: me ? me.createdAt : null,
+      records: loadRecordsLocal(S.username),
+    };
+    const text = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = 'ai-interview-backup-' + new Date().toISOString().slice(0, 10) + '.txt';
@@ -1577,13 +1636,37 @@ async function downloadBackup() {
   }
 }
 
-async function restoreFromFile(file) {
+function restoreFromFile(file) {
   if (!file) return;
   try {
-    const text = (await file.text()).trim();
-    const r = await api('/api/restore', { method: 'POST', body: JSON.stringify({ data: text }) });
-    toast(`${r.username} 계정으로 기록이 복원되었습니다.`);
-    openRecords();
+    file.text().then((raw) => {
+      const text = raw.trim();
+      let payload;
+      try {
+        payload = JSON.parse(decodeURIComponent(escape(atob(text))));
+      } catch {
+        throw new Error('백업 파일을 읽을 수 없습니다.');
+      }
+      if (payload.app !== 'ai-interview-lab' || !payload.username || !payload.passHash || !Array.isArray(payload.records)) {
+        throw new Error('올바르지 않은 백업 파일입니다.');
+      }
+      const users = loadUsersLocal();
+      if (users[payload.username] && users[payload.username].passHash !== payload.passHash) {
+        throw new Error('같은 아이디의 다른 비밀번호가 이미 존재합니다. 다른 아이디로 복원하거나 기존 계정을 삭제해 주세요.');
+      }
+      if (!users[payload.username]) {
+        users[payload.username] = {
+          salt: payload.salt || randomSalt(),
+          passHash: payload.passHash,
+          recoveryCodeHash: payload.recoveryCodeHash || null,
+          createdAt: payload.createdAt || Date.now(),
+        };
+        saveUsersLocal(users);
+      }
+      saveRecordsLocal(payload.username, payload.records);
+      toast(payload.username + ' 계정으로 기록이 복원되었습니다.');
+      if (S.username === payload.username) openRecords();
+    }).catch((e) => toast('복원 실패: ' + e.message, true));
   } catch (e) {
     toast('복원 실패: ' + e.message, true);
   } finally {
