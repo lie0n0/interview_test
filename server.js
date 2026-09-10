@@ -21,7 +21,9 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 const crypto = require('node:crypto');
 const os = require('node:os');
-const { spawn, spawnSync } = require('node:child_process');
+const { spawn, execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+const execFileAsync = promisify(execFile);
 
 const PORT = Number(process.env.PORT || 3000);
 const ROOT = __dirname;
@@ -185,10 +187,10 @@ function destroySession(token) {
  * opencode CLI가 없는 환경(예: Render 컨테이너)에서 자동 설치한다.
  * zen 무료 모델은 로그인·자격증명 없이 익명으로 동작하므로 바이너리만 있으면 된다.
  */
-function ensureOpencode() {
+async function ensureOpencode() {
   try {
-    const r = spawnSync('opencode', ['--version'], { stdio: 'ignore', timeout: 15000 });
-    if (r.status === 0) return { ok: true, source: 'PATH' };
+    await execFileAsync('opencode', ['--version'], { timeout: 15000 });
+    return { ok: true, source: 'PATH' };
   } catch { /* PATH에 없음 — 아래에서 처리 */ }
 
   const localBin = path.join(os.homedir(), '.opencode', 'bin');
@@ -203,17 +205,18 @@ function ensureOpencode() {
   }
 
   // 공식 설치 스크립트 (--no-modify-path: 셸 설정 파일 수정 방지)
+  console.log('[정보] opencode가 없어 자동 설치를 시작합니다 (최대 3분)...');
   try {
-    const r = spawnSync(
+    await execFileAsync(
       'bash',
       ['-c', 'curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path'],
-      { stdio: 'inherit', timeout: 180000, env: { ...process.env, NO_COLOR: '1' } }
+      { timeout: 180000, env: { ...process.env, NO_COLOR: '1' } }
     );
-    if (r.status === 0 && fs.existsSync(localBinExe)) {
+    if (fs.existsSync(localBinExe)) {
       process.env.PATH = `${localBin}${path.delimiter}${process.env.PATH}`;
       return { ok: true, source: '설치 스크립트' };
     }
-    return { ok: false, error: `설치 스크립트 종료 코드 ${r.status ?? '알 수 없음'}` };
+    return { ok: false, error: '설치 후 바이너리를 찾지 못했습니다.' };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -225,7 +228,9 @@ function ensureOpencode() {
  * `opencode run --model <id> --format json <prompt>` 실행
  * stdout의 JSONL 이벤트 스트림에서 type:"text" 이벤트의 part.text만 추출한다.
  */
-function callOpenCode(model, prompt, timeoutMs) {
+async function callOpenCode(model, prompt, timeoutMs) {
+  // 시작 시 opencode 자동 점검(설치)이 끝나길 대기 — listen 차단은 없음
+  try { await opencodeReady; } catch { /* 설치 실패 시 spawn 단계에서 안내 */ }
   return new Promise((resolve, reject) => {
     const child = spawn(
       'opencode',
@@ -765,12 +770,15 @@ const server = http.createServer(async (req, res) => {
   return send(res, 404, { ok: false, error: 'Not Found' });
 });
 
-const opencodeCheck = ensureOpencode();
-if (opencodeCheck.ok) {
-  console.log(`[정보] opencode 확인: ${opencodeCheck.source} (${MODELS.interviewer})`);
-} else {
-  console.error(`[경고] opencode 자동 설치 실패: ${opencodeCheck.error} — LLM 면접 불가. 수동 설치: curl -fsSL https://opencode.ai/install | bash`);
-}
+// opencode 자동 점검은 백그라운드로 — listen 차단 없이 health check 통과
+const opencodeReady = ensureOpencode();
+opencodeReady.then((r) => {
+  if (r.ok) {
+    console.log(`[정보] opencode 확인: ${r.source} (${MODELS.interviewer})`);
+  } else {
+    console.error(`[경고] opencode 자동 설치 실패: ${r.error} — LLM 면접 불가. 수동 설치: curl -fsSL https://opencode.ai/install | bash`);
+  }
+});
 
 server.listen(PORT, () => {
   console.log('');
