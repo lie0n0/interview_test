@@ -29,9 +29,19 @@ const ROOT = __dirname;
 const DATA_DIR = fs.existsSync(path.join(ROOT, '.agents', 'data'))
   ? path.join(ROOT, '.agents', 'data')
   : ROOT;
-const DATA_FILE = fs.existsSync(path.join(DATA_DIR, 'universities.json'))
-  ? path.join(DATA_DIR, 'universities.json')
-  : path.join(ROOT, 'universities.json');
+
+// universities.json 후보 경로들 (순서대로 시도)
+const CANDIDATE_PATHS = [
+  path.join(DATA_DIR, 'universities.json'),
+  path.join(ROOT, '.agents', 'data', 'universities.json'),
+  path.join(ROOT, '.agents', 'universities.json'),
+  path.join(ROOT, 'universities.json'),
+];
+
+// 실제 존재하는 첫 번째 경로 선택
+const DATA_FILE = CANDIDATE_PATHS.find((p) => fs.existsSync(p))
+  || path.join(ROOT, 'universities.json');
+
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 const RECORDS_FILE = path.join(DATA_DIR, 'records.json');
@@ -60,10 +70,14 @@ const STATIC_ROUTES = new Map([
 
 // 대학 데이터는 서버 시작 시 1회 로드 (수정 시 서버 재시작)
 let universitiesData = null;
+console.log(`[정보] universities.json 경로: ${DATA_FILE} (존재: ${fs.existsSync(DATA_FILE)})`);
 try {
   universitiesData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  console.log(`[정보] universities.json 로드 성공 (${universitiesData.universities?.length ?? '?'}개 대학)`);
 } catch (e) {
   console.error(`[경고] universities.json을 읽지 못했습니다: ${e.message}`);
+  console.error(`[디버그] 시도한 경로 목록: ${CANDIDATE_PATHS.join(' | ')}`);
+  console.error(`[디버그] 각 경로 존재 여부: ${CANDIDATE_PATHS.map((p) => fs.existsSync(p)).join(' | ')}`);
 }
 
 /* ===================== 응답 헬퍼 ===================== */
