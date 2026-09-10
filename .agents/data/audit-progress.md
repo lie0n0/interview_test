@@ -108,9 +108,10 @@
 - **kangnam (강남대학교)**: 학사구조개편으로 학부·전공제 전환 확인 (복지융합대학 사회복지학부/시니어비즈니스학과, 경영관리대학 상경학부/법행정세무학부, 글로벌문화콘텐츠대학 문화콘텐츠학과/국제지역학과, 자유전공학부, 교육학과). 데이터는 구학과명 기반(경영학과, 회계세무학과 등) — 명칭 변경 대응 판단 필요.
   - 출처: https://web.kangnam.ac.kr/menu/9bff9ab75286a0ab29b9aa0eaf71ba95.do
 - **gangneung_wonju (강릉원주대학교)**: 2026학년도부터 **강원대학교로 통합** (강원대 강릉·원주캠퍼스). 데이터 모델 판단 필요 (별도 유지 vs 통합 반영). 현재 17학과.
-  - 출처: https://www.gwnu.ac.kr/iphak/index.do ("1일 통합 강원대학교 출범"), https://tourism.gwnu.ac.kr/iphak/7638/subview.do (전공안내)
-- **kangwon (강원대학교)**: 춘천캠퍼스 기준 경영·회계학부, 경제·정보통계학부, IT대학(AI융합학과, 디지털밀리터리학과 등), 삼척·도계 보건과학대학 9개 학과 등 대규모 누락 의심. 현재 24학과.
-  - 출처: https://wwwk.kangwon.ac.kr/www/contents.do?key=1794 (IT대학), https://admission.kangwon.ac.kr/www/contents.do?key=1818 (보건과학대학)
+  - **해결 완료 (2026-09-10 확인)**: `c3313d7`에서 강원대(kangwon)로 통합 처리됨 — gangneung_wonju 엔트리 app/raw 제거, kangwon을 24→107학과로 확장 (춘천+삼척·도계+강릉·원주 4캠퍼스 반영). 공식 입학홈페이지(2026 학과/학부별 안내) 대조로 타당성 확인.
+  - 출처: https://itcall.kangwon.ac.kr/admission/selectMjrInfoList.do?key=2156 (춘천·삼척·도계), https://wwwk.kangwon.ac.kr/www/contents.do?key=1809 (공학대학), https://admission.kangwon.ac.kr/www/contents.do?key=1818 (보건과학대학)
+- **kangwon (강원대학교)**: **107학과 — 이상치 아님** (2026 강릉원주 통합 반영). 춘천캠퍼스(인문·사회·경영·농생명·자연·공과·IT·사범·수의·약·의·간호대) + 삼척캠퍼스(인문사회·공학·디자인스포츠대) + 도계캠퍼스(보건과학대) 통합 기준. 확인 사항: 경제·정보통계학부(경제학과·국제통상학과 통합), 경영·회계학부(회계학과 통합) — 옛 학과명이 학부명에 흡수된 것 확인.
+  - 출처: https://www.namu.moe/w/강원대학교/학부 (2026 학과 편성표), https://wwwk.kangwon.ac.kr/www/contents.do?key=1791 (자연과학대학)
 
 ### 데이터 밀도 분포 (참고 — 2026-09-10 재계산)
 ```
