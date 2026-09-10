@@ -15,3 +15,6 @@ node_modules/
 
 # 브라우저 MCP
 .playwright-mcp/
+
+# 데이터 백업
+.agents/data/universities.json.bak*
