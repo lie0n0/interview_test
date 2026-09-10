@@ -1,18 +1,46 @@
 # 대학 학과 전수 재감사 — 진행 체크포인트
 
 > 이 파일은 컨텍스트 컴팩션과 무관하게 감사 현황을 영속화하기 위한 체크포인트다.
-> 수정 시 마다 업데이트할 것. 마지막 업데이트: 2026-09-09
+> 수정 시 마다 업데이트할 것. 마지막 업데이트: 2026-09-10
 
 ## 데이터 파일 구조 (검증 완료)
 
-- `universities.json` → `{ universities: [{id, name, departments:[{id, name, passage, modelAnswerHint, disposition, weights}]}], defaultWeights: {...} }` (149개 대학)
-- `raw-universities/index.js` → `[ [id, 한글명, 등급(MID_PRI/MID_NAT/...), [학과명, ...]], ... ]` (150개 엔트리)
+- `universities.json` → `{ universities: [{id, name, departments:[{id, name, passage, modelAnswerHint, disposition, weights}]}], defaultWeights: {...} }` (139개 대학 — 면접 필터링 적용 후)
+- `raw-universities/index.js` → `[ [id, 한글명, 등급(MID_PRI/MID_NAT/...), [학과명, ...]], ... ]` (139개 엔트리)
 
-## 로컬 데이터 일관성 감사 (완료 — 2026-09-09)
+## 로컬 데이터 일관성 감사 (완료 — 2026-09-09 ~ 2026-09-10)
 
-- **app ↔ raw 학과 목록: 0건 차이** (공유 id 149개 전수 비교, 누락/초과 모두 없음)
-- ⚠️ **raw 중복 발견**: `korea_national_edu` (한국교원대학교, MID_NAT, 10학과) — `korea_national_education`(MID_PRI)과 동일 대학 중복. app은 `korea_national_education`만 사용.
-  - 처리: B30 배치에 포함해 제거 예정. (참조 확인 필요: 모델/프롬프트/테스트)
+- **app ↔ raw 학과 목록: 0건 차이** (공유 id 139개 전수 비교, 누락/초과 모두 없음)
+- ⚠️ **raw 중복 해결 완료**: `korea_national_edu` (한국교원대학교, MID_NAT, 10학과) — `korea_national_education`(MID_PRI)과 동일 대학 중복. app은 `korea_national_education`만 사용하므로 raw에서 제거 완료 (2026-09-10, 커밋 1d1d465)
+
+## 면접 전형 필터링 (완료 — 2026-09-10, 커밋 1d1d465)
+
+사용자 지시: "입시요강 확인 → 면접 없으면 학교 삭제, 면접 있는 학교는 면접 있는 학과만 유지" (판단 기준: **수시** — 수시 학생부종합/면접 전형에서 면접 실시 여부, 정시 의대·약대 적성면접은 별도 유지)
+
+**제거된 대학 9곳 (universities.json 148→139, raw 149→139):**
+| id | 대학 | 사유 |
+|---|---|---|
+| cyber_hankuk | 사이버한국외국어대학교 | 사이버대 — 면접 없음 (자소서 70+학업소양검사 30) |
+| cyber_seoul | 서울사이버대학교 | 사이버대 — 면접 없음 |
+| korea_digital | 한국디지털대학교 | 사이버대 — 면접 없음 |
+| knou | 한국방송통신대학교 | 방통대 — 면접 없음 (성적 순) |
+| dankook_seoul | 단국대학교(서울) | 중복 — 본 엔트리의 하위집합 (7학과) |
+| sejong_seoul | 세종대학교(서울) | 중복 — 본 엔트리의 하위집합 |
+| shinhan_seoul | 신한대학교(서울) | 중복 — 본 엔트리의 하위집합 |
+| induk_seoul | 인덕대학교(서울) | 중복 — 7/7 100% 동일 |
+| pukyong | 부산대학교(부산) | 가짜 중복 — 실제 부산대(부산) 아님 |
+
+**면접 보유 확인 (유지 대상) — 표본 조사 결과:**
+- 상위권 일반대: 서울대(일반전형 면접 50%), 고려대(면접 30~40%), 연세대(서류 70+면접 30), 경북대(2단계 면접 30~50%), 한양대(2026 면접형 확대) — 전부 면접 전형 보유
+- 과학기술원: KAIST(일반전형), POSTECH(면접 50:50), GIST, UNIST(탐구우수전형) — 면접 보유
+- 교육대: 경인교대(비대면 영상면접), 대구교대(2단계 면접 300점) 등 — 면접 보유
+- 예체능·신학: 총신대(모든 전형 구술면접), 영남신학대(면접 30%), 추계예술대·서울예술대(실기+구술), 한국체육대(면접고사) — 면접 보유
+- 전문대·폴리텍: 거제대(대학자체·고른기회 면접 100%), 구미대(전체학과 면접), 김천대(일반면접 전형) — 면접 전형 존재, 유지
+- **결론: 사이버대/방통대를 제외한 4년제 및 전문대는 사실상 전 대학 수시 면접 전형 보유 → 학과 단위 추가 제거 불필요**
+
+**검증:**
+- 서버 재시작 후 `/api/universities` → 139개 대학, 3,315개 학과 정상 로드
+- 백업: `.agents/data/universities.json.bak2` (제거 전 148개 상태) — gitignore 추가됨 (.agents/data/universities.json.bak*)
 
 ## 위임 인프라 장애 진단 (중요 — 반복 시도 금지)
 
@@ -30,7 +58,9 @@
    - 두 레이어 동기화 유지가 핵심 (로컬 감사 기준)
 5. 각 대학 완료 시 아래 상태표를 `[완료]`로 갱신
 
-## 대학별 감사 상태 (149개)
+## 대학별 감사 상태 (139개 — 9개 대학 면접 필터링 제거, 2026-09-10)
+
+> 제거됨: cyber_hankuk, cyber_seoul, korea_digital, knou, dankook_seoul, sejong_seoul, shinhan_seoul, induk_seoul, pukyong, korea_national_edu(중복)
 
 - [완료] 이전: gachon (가천대, 정보보호학과 추가됨 — 이전 세션)
 - [진행중] B1: korea_catholic, kangnam, gangneung_wonju, kangwon
@@ -40,34 +70,34 @@
 - [대기] B5: kwangwoon, gists, gnue, gwangju, kwu
 - [대기] B6: gumi, gunmin, kunsan, kumoh, gimcheon
 - [대기] B7: gimhae, nazarene, nambu, nsu, dankook
-- [대기] B8: dankook_seoul, daegu_catholic, daegu_national_edu, daegu, dhu
+- [대기] B8: daegu_catholic, daegu_national_edu, daegu, dhu
 - [대기] B9: daejeon_u, daejin, duksung, dongguk, dongduk
 - [대기] B10: tongmyong, dongseo, dongshin, donga, dongeui
 - [대기] B11: myongji, mokwon, mokpo_national, paichai, baekseok
-- [대기] B12: pknu, busan_national_edu, pusan, pukyong, bufs
-- [대기] B13: cyber_hankuk, sahmyook, sungshin, sangji, seogang
+- [대기] B12: pknu, busan_national_edu, pusan, bufs
+- [대기] B13: sahmyook, sungshin, sangji, seogang
 - [대기] B14: seokyeong, korea_catholic_seoul, seoul_tech, snue, seoul
-- [대기] B15: cyber_seoul, seoul_city, sungshin_w, seoul_arts, sunmoon
-- [대기] B16: skhu, sungkyunkwan, semyung, sejong, sejong_seoul
+- [대기] B15: seoul_city, sungshin_w, seoul_arts, sunmoon
+- [대기] B16: skhu, sungkyunkwan, semyung, sejong
 - [대기] B17: suwon, sookmyung, sunchon, suncheonhyang, soongsil
-- [대기] B18: silla, shinhan, shinhan_seoul, ajou, andong
+- [대기] B18: silla, shinhan, ajou, andong
 - [대기] B19: anyang, yonsei, yeungnam, danguk, youngsan
 - [대기] B20: yeungjin, yongin, woosuk, woosong, unist
 - [대기] B21: ulsan, wonkwang, u1, eulji, ewha
-- [대기] B22: induk, induk_seoul, inje, incheon, jeonnam
+- [대기] B22: induk, inje, incheon, jeonnam
 - [대기] B23: jeonbuk, jeju, joongbu, chungang, jinju
 - [대기] B24: changwon, cheongju, chongshin, chugye, chungnam
 - [대기] B25: chungbuk, pyeongtaek, postech, hankyong, kaist
-- [대기] B26: korea_national_education, korea_tech, kat, korea_digital, knou
+- [대기] B26: korea_national_education, korea_tech, kat
 - [대기] B27: kpu, kcarts, korea_u, karts, polytech
 - [대기] B28: korea_open2, korea_open_univ, kau, korea_maritime, hannam
 - [대기] B29: handong, hallym, hanbat, hansung, hanshin
-- [대기] B30: hanyang, honam, hoseo, hongik (+ korea_national_edu 중복 제거)
+- [대기] B30: hanyang, honam, hoseo, hongik
 
-## 데이터 밀도 (우선순위 참고)
+## 데이터 밀도 (139개 기준 — 2026-09-10 재계산, 우선순위 참고)
 
-- 평균 21.9학과, 중앙값 20, 최대 54 (seoul), **15학과 이하 59개 대학** — 저밀도 우선 감사
-- 최소: danguk 3, geoje 5, gumi 5, gimcheon 5
+- 평균 23.8학과, **15학과 이하 49개 대학** — 저밀도 우선 감사
+- 최소: danguk(3), geoje(5), gumi(5), gimcheon(5), daegu_national_edu(6)
 
 ## 발견 사항 (출처 필수)
 
@@ -82,7 +112,7 @@
 - **kangwon (강원대학교)**: 춘천캠퍼스 기준 경영·회계학부, 경제·정보통계학부, IT대학(AI융합학과, 디지털밀리터리학과 등), 삼척·도계 보건과학대학 9개 학과 등 대규모 누락 의심. 현재 24학과.
   - 출처: https://wwwk.kangwon.ac.kr/www/contents.do?key=1794 (IT대학), https://admission.kangwon.ac.kr/www/contents.do?key=1818 (보건과학대학)
 
-### 데이터 밀도 분포 (참고)
+### 데이터 밀도 분포 (참고 — 2026-09-10 재계산)
 ```
-3: danguk | 5: geoje, gumi, gimcheon | 6: daegu_national_edu, daejin, duksung, busan_national_edu, cyber_hankuk, sejong_seoul, shinhan_seoul, korea_digital | 7: gimhae, dankook_seoul, tongmyong, induk, induk_seoul, knou, karts, korea_open2, korea_open_univ | 8: gwangju, sangji, korea_catholic_seoul, cyber_seoul
+3: danguk | 5: geoje, gumi, gimcheon | 6: daegu_national_edu, daejin, duksung, busan_national_edu | 7: gimhae, tongmyong, induk, karts, korea_open2, korea_open_univ | 8: gwangju, sangji, korea_catholic_seoul, semyung, shinhan, yeungjin, jinju, korea_tech, kat, korea_maritime | 9: daegu_catholic, suncheonhyang, silla, woosuk, inje, hankyong, polytech, hanshin | 10: konyang, gnue, sahmyook, seoul_arts, unist, korea_national_education | 11: ginue, gists, kcarts | 12: snue, changwon, hansung | 13: gyeongnam_national, kunsan, postech | 14: handong | 15: chugye | 16: mokpo_national, seoul_tech, chongshin, kaist, hallym | 17: ulsan | 18: gyeongnam, daegu, skhu, kpu | 19: seoul_city, wonkwang | 20: bufs, sungshin_w, eulji, korea_u, kau | 21: incheon, hongik | 22: kwangwoon | 23: keimyung, sungshin, jeju | 24: kumoh, nazarene | 25: donga, sookmyung, woosong | 26: gunmin, dongduk, myongji, seokyeong | 28: kosin, chungbuk, pyeongtaek | 29: nambu, sejong, u1, jeonnam, jeonbuk | 30: anyang, yeungnam, chungnam | 31: kwu, dongguk, seogang, soongsil | 32: nsu, baekseok, yongin, hanbat | 33: kyungil, dongseo | 34: gyeongbuk, sungkyunkwan | 35: paichai, andong | 36: konkuk, dankook, dongshin, mokwon, sunchon, youngsan, chungang | 37: sunmoon, joongbu | 38: dhu, ajou, honam | 40: kyunghee, hanyang, hoseo | 41: suwon | 42: kongju, hannam | 43: kangnam, kyungsung, daejeon_u, pusan, cheongju | 44: dongeui | 45: korea_catholic, kyonggi, pknu | 46: yonsei | 48: korea | 53: gachon, ewha | 54: seoul | 107: kangwon
 ```
