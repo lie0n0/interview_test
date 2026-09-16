@@ -844,7 +844,18 @@ function b64FromBuffer(buf) {
   return btoa(bin);
 }
 
-async function ocrPdfWithTesseract(file, onProgress) {
+function isUsableRecordText(text) {
+  const t = String(text || '').trim();
+  if (t.length < 50) return false;
+  const sample = t.slice(0, 5000);
+  const good = sample.match(/[가-힣A-Za-z0-9\s.,!?;:'"()\[\]\-·\n]/g);
+  if (!good || good.length / sample.length < 0.7) return false;
+  const tokens = sample.split(/\s+/).filter(Boolean);
+  if (tokens.length > 10 && tokens.filter((w) => w.length > 40).length / tokens.length > 0.3) return false;
+  return true;
+}
+
+async function ocrPdfWithTesseract(pdfData, onProgress) {
   if (typeof window.pdfjsLib === 'undefined') throw new Error('인식 모듈을 불러오지 못했습니다. 인터넷 연결 후 새로고침해 주세요.');
   if (typeof window.Tesseract === 'undefined') throw new Error('인식 모듈을 불러오지 못했습니다. 인터넷 연결 후 새로고침해 주세요.');
   try {
@@ -852,8 +863,7 @@ async function ocrPdfWithTesseract(file, onProgress) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
     }
   } catch {}
-  const ab = await file.arrayBuffer();
-  const pdf = await window.pdfjsLib.getDocument({ data: ab }).promise;
+  const pdf = await window.pdfjsLib.getDocument({ data: pdfData }).promise;
   const maxPages = Math.min(pdf.numPages || 0, 10);
   if (!maxPages) throw new Error('PDF 페이지를 읽지 못했습니다.');
   let out = '';
@@ -908,25 +918,34 @@ async function handleRecordFile(file) {
         source = String(r.source || '').toUpperCase();
       }
     } catch {}
-    if (text.length < 50 && /\.pdf$/i.test(file.name)) {
+    if (!isUsableRecordText(text) && /\.pdf$/i.test(file.name)) {
       el.recordCharcnt.textContent = '텍스트 인식 중... (1~2분 걸릴 수 있습니다)';
-      const ocrText = await ocrPdfWithTesseract(file, (p, total) => {
+      const ocrText = await ocrPdfWithTesseract(buf, (p, total) => {
         el.recordCharcnt.textContent = `텍스트 인식 중... ${p}/${total}페이지`;
       });
-      if (ocrText) {
-        text = ocrText;
-        source = source ? source + '+OCR' : 'OCR';
+      if (ocrText && isUsableRecordText(ocrText)) {
+        text = ocrText.trim();
+        source = 'OCR';
+      } else if (ocrText && ocrText.trim() && !isUsableRecordText(text)) {
+        text = ocrText.trim();
+        source = 'OCR';
       }
     }
-    if (!text) {
+    if (!isUsableRecordText(text)) {
       throw new Error('이 파일에서 텍스트를 추출하지 못했습니다. TXT 또는 HTML로 변환해 올려주세요.');
+    }
+    const MAX_RECORD_CHARS = 15000;
+    let truncated = false;
+    if (text.length > MAX_RECORD_CHARS) {
+      text = text.slice(0, MAX_RECORD_CHARS);
+      truncated = true;
     }
     S.recordText.value = text;
     el.recordText.value = text;
     el.recordText.disabled = false;
     el.recordMeta.hidden = false;
     el.recordFname.textContent = file.name;
-    el.recordCharcnt.textContent = `추출 완료 · ${text.length.toLocaleString()}자 (${source || 'TEXT'}) · 아래에서 수정할 수 있습니다.`;
+    el.recordCharcnt.textContent = `추출 완료 · ${text.length.toLocaleString()}자 (${source || 'TEXT'})${truncated ? ' · 앞 15,000자만 사용' : ''} · 아래에서 수정할 수 있습니다.`;
     toast('생기부 텍스트 추출 완료');
   } catch (e) {
     el.recordCharcnt.textContent = '추출 실패. ' + e.message;

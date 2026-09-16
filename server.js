@@ -808,8 +808,9 @@ const server = http.createServer(async (req, res) => {
         return send(res, 400, { ok: false, error: '파일 데이터를 디코딩할 수 없습니다.' });
       }
       try {
-        const { text, source } = extractTextFromFile(filename, buf);
-        if (!text) {
+        const { text: rawText, source } = extractTextFromFile(filename, buf);
+        const text = typeof rawText === 'string' ? rawText.slice(0, 20000) : '';
+        if (!text.trim()) {
           return send(res, 422, { ok: false, error: '이 파일에서 텍스트를 추출하지 못했습니다. TXT 또는 HTML로 변환해 올려주세요.' });
         }
         return send(res, 200, { ok: true, text, source, chars: text.length });
