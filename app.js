@@ -844,11 +844,42 @@ function b64FromBuffer(buf) {
   return btoa(bin);
 }
 
+async function ocrPdfWithTesseract(file, onProgress) {
+  if (typeof window.pdfjsLib === 'undefined') throw new Error('인식 모듈을 불러오지 못했습니다. 인터넷 연결 후 새로고침해 주세요.');
+  if (typeof window.Tesseract === 'undefined') throw new Error('인식 모듈을 불러오지 못했습니다. 인터넷 연결 후 새로고침해 주세요.');
+  try {
+    if (window.pdfjsLib.GlobalWorkerOptions && !window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+    }
+  } catch {}
+  const ab = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: ab }).promise;
+  const maxPages = Math.min(pdf.numPages || 0, 10);
+  if (!maxPages) throw new Error('PDF 페이지를 읽지 못했습니다.');
+  let out = '';
+  for (let p = 1; p <= maxPages; p++) {
+    if (typeof onProgress === 'function') onProgress(p, maxPages);
+    const page = await pdf.getPage(p);
+    const viewport = page.getViewport({ scale: 2.0 });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    const { data } = await window.Tesseract.recognize(canvas, 'kor+eng');
+    const t = (data && data.text ? String(data.text) : '').trim();
+    if (t) out += (out ? '\n\n' : '') + t;
+    canvas.width = 0; canvas.height = 0;
+  }
+  try { await pdf.destroy(); } catch {}
+  return out.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 async function handleRecordFile(file) {
   if (!file) return;
   const okExt = /\.(html?|txt|pdf|docx)$/i;
   if (!okExt.test(file.name)) {
-    toast('지원하지 않는 형식입니다. HTML/PDF/DOCX/TXT 파일을 첨부하세요.', true);
+    toast('올릴 수 있는 파일: PDF · HTML · DOCX · TXT', true);
     return;
   }
   if (file.size > 10 * 1024 * 1024) {
@@ -861,22 +892,41 @@ async function handleRecordFile(file) {
   el.recordCharcnt.textContent = '텍스트 추출 중...';
   el.dropZone.classList.add('busy');
   try {
-    const data = b64FromBuffer(new Uint8Array(await file.arrayBuffer()));
-    const res = await fetch('/api/extract-text', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename: file.name, data }),
-    });
-    const r = await res.json();
-    if (!r.ok || typeof r.text !== 'string' || !r.text.trim()) {
-      throw new Error(r.error || '텍스트 추출에 실패했습니다.');
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const data = b64FromBuffer(buf);
+    let text = '';
+    let source = '';
+    try {
+      const res = await fetch('/api/extract-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, data }),
+      });
+      const r = await res.json();
+      if (r.ok && typeof r.text === 'string' && r.text.trim()) {
+        text = r.text.trim();
+        source = String(r.source || '').toUpperCase();
+      }
+    } catch {}
+    if (text.length < 50 && /\.pdf$/i.test(file.name)) {
+      el.recordCharcnt.textContent = '텍스트 인식 중... (1~2분 걸릴 수 있습니다)';
+      const ocrText = await ocrPdfWithTesseract(file, (p, total) => {
+        el.recordCharcnt.textContent = `텍스트 인식 중... ${p}/${total}페이지`;
+      });
+      if (ocrText) {
+        text = ocrText;
+        source = source ? source + '+OCR' : 'OCR';
+      }
     }
-    S.recordText.value = r.text;
-    el.recordText.value = r.text;
+    if (!text) {
+      throw new Error('이 파일에서 텍스트를 추출하지 못했습니다. TXT 또는 HTML로 변환해 올려주세요.');
+    }
+    S.recordText.value = text;
+    el.recordText.value = text;
     el.recordText.disabled = false;
     el.recordMeta.hidden = false;
     el.recordFname.textContent = file.name;
-    el.recordCharcnt.textContent = `추출 완료 · ${r.chars.toLocaleString()}자 (${String(r.source).toUpperCase()}) · 아래에서 수정할 수 있습니다.`;
+    el.recordCharcnt.textContent = `추출 완료 · ${text.length.toLocaleString()}자 (${source || 'TEXT'}) · 아래에서 수정할 수 있습니다.`;
     toast('생기부 텍스트 추출 완료');
   } catch (e) {
     el.recordCharcnt.textContent = '추출 실패. ' + e.message;
@@ -1786,6 +1836,7 @@ el.btnQPlus.addEventListener('click', () => adjustQTime('q', 1));
 el.btnTMinus.addEventListener('click', () => adjustQTime('t', -1));
 el.btnTPlus.addEventListener('click', () => adjustQTime('t', 1));
 el.recordText.addEventListener('input', () => {
+  S.recordText.value = el.recordText.value;
   el.recordCharcnt.textContent = `인식 텍스트 ${S.recordText.value.trim().length}자 · 수정 반영됨.`;
   updateStart();
 });

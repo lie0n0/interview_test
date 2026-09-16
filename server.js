@@ -810,7 +810,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const { text, source } = extractTextFromFile(filename, buf);
         if (!text) {
-          return send(res, 422, { ok: false, error: '이 파일에서 텍스트를 추출하지 못했습니다. (스캔 이미지 PDF인 경우 HTML 등으로 변환해 주세요.)' });
+          return send(res, 422, { ok: false, error: '이 파일에서 텍스트를 추출하지 못했습니다. TXT 또는 HTML로 변환해 올려주세요.' });
         }
         return send(res, 200, { ok: true, text, source, chars: text.length });
       } catch (e) {
