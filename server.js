@@ -442,6 +442,70 @@ async function llmWithRetry(prompt, opts = {}) {
   }
 }
 
+/* ===================== 생기부 구간 요약 (긴 생기부 map-reduce) ===================== */
+
+const PROFILE_CHUNK_CHARS = 12000;
+const PROFILE_MAX_CHUNKS = 7;
+
+function splitRecordChunks(text) {
+  const pieces = [];
+  for (const p of String(text).split(/\n{2,}/)) {
+    let rest = p;
+    while (rest.length > PROFILE_CHUNK_CHARS) {
+      pieces.push(rest.slice(0, PROFILE_CHUNK_CHARS));
+      rest = rest.slice(PROFILE_CHUNK_CHARS);
+    }
+    if (rest) pieces.push(rest);
+  }
+  const chunks = [];
+  let cur = '';
+  for (const p of pieces) {
+    if (cur && (cur + '\n\n' + p).length > PROFILE_CHUNK_CHARS) {
+      chunks.push(cur.trim());
+      cur = p;
+      if (chunks.length >= PROFILE_MAX_CHUNKS) break;
+    } else {
+      cur = cur ? cur + '\n\n' + p : p;
+    }
+  }
+  if (cur.trim() && chunks.length < PROFILE_MAX_CHUNKS) chunks.push(cur.trim());
+  if (!chunks.length && String(text).trim()) chunks.push(String(text).trim().slice(0, PROFILE_CHUNK_CHARS));
+  return chunks;
+}
+
+function chunkSummaryPrompt(idx, total, chunk) {
+  return `당신은 한국 대학 입시 서류 분석 보조자다. 아래는 지원자 학교생활기록부의 ${total}개 구간 중 ${idx}번째 구간이다. 면접 질문 생성에 필요한 핵심 사실만 뽑아 800자 이내 불릿 요약을 만들라.
+
+규칙:
+- 수상·활동·세특·진로희망·교과 성취 등 구체적 사실 위주
+- 평가·해석·질문 생성 금지, 사실 추출만
+- 한국어
+
+[구간 ${idx}/${total}]
+${chunk}
+
+다음 JSON만 출력하라 (추가 텍스트 금지):
+{"summary":"불릿 요약 (800자 이내)"}`;
+}
+
+async function summarizeRecordChunk(idx, total, chunk) {
+  try {
+    const { json } = await llm(chunkSummaryPrompt(idx, total, chunk), { model: 'interviewer', timeoutMs: 120000 });
+    const s = String(json.summary || '').trim();
+    return s ? `[구간 ${idx}/${total}]\n${s.slice(0, 1000)}` : chunk.slice(0, 1000);
+  } catch {
+    return chunk.slice(0, 1000);
+  }
+}
+
+async function buildRecordProfile(text) {
+  const t = String(text || '').trim();
+  if (t.length <= PROFILE_CHUNK_CHARS) return { profile: t, chunked: false, chunks: 1 };
+  const chunks = splitRecordChunks(t);
+  const parts = await Promise.all(chunks.map((c, i) => summarizeRecordChunk(i + 1, chunks.length, c)));
+  return { profile: parts.join('\n\n').slice(0, 7000), chunked: true, chunks: chunks.length };
+}
+
 /* ===================== 파일 → 텍스트 추출 ===================== */
 
 const MAX_RECORD_FILE = 10 * 1024 * 1024; // 10MB
@@ -628,7 +692,7 @@ const server = http.createServer(async (req, res) => {
     return send(res, 404, { ok: false, error: 'Not Found' });
   }
 
-  if (req.method === 'POST' && (p === '/api/llm' || p === '/api/extract-text' || p === '/api/register' || p === '/api/login' || p === '/api/reset-password' || p === '/api/logout' || p === '/api/records' || p === '/api/backup' || p === '/api/restore')) {
+  if (req.method === 'POST' && (p === '/api/llm' || p === '/api/extract-text' || p === '/api/summarize-record' || p === '/api/register' || p === '/api/login' || p === '/api/reset-password' || p === '/api/logout' || p === '/api/records' || p === '/api/backup' || p === '/api/restore')) {
     let body = '';
     try {
       for await (const chunk of req) {
@@ -809,13 +873,26 @@ const server = http.createServer(async (req, res) => {
       }
       try {
         const { text: rawText, source } = extractTextFromFile(filename, buf);
-        const text = typeof rawText === 'string' ? rawText.slice(0, 20000) : '';
+        const text = typeof rawText === 'string' ? rawText.slice(0, 90000) : '';
         if (!text.trim()) {
           return send(res, 422, { ok: false, error: '이 파일에서 텍스트를 추출하지 못했습니다. TXT 또는 HTML로 변환해 올려주세요.' });
         }
         return send(res, 200, { ok: true, text, source, chars: text.length });
       } catch (e) {
         return send(res, 400, { ok: false, error: e.message });
+      }
+    }
+
+    if (p === '/api/summarize-record') {
+      const text = String(parsed.text || '');
+      if (text.trim().length < 50) {
+        return send(res, 400, { ok: false, error: '생기부 텍스트가 너무 짧습니다 (50자 이상).' });
+      }
+      try {
+        const { profile, chunked, chunks } = await buildRecordProfile(text.slice(0, 90000));
+        return send(res, 200, { ok: true, profile, chunked, chunks, chars: profile.length });
+      } catch (e) {
+        return send(res, 500, { ok: false, error: e.message });
       }
     }
 

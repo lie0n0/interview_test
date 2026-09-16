@@ -49,6 +49,7 @@ const S = {
   comprehensive: null,  // {overall, strengths, weaknesses, advice, questions:[{intent,betterAnswer}]}
   viewRecordsData: [],  // 내 기록 목록 캐시
   currentRecord: null,  // 다시 보기 중인 기록
+  recordProfile: null,
 };
 
 /* ---------------- DOM ---------------- */
@@ -400,6 +401,10 @@ async function callLLM(prompt, model = 'interviewer') {
 
 /* ================= 프롬프트 구성 (prompts/ 스키마 준수) ================= */
 
+function recSrc() {
+  return S.recordProfile || S.recordText.value;
+}
+
 function weightsOf() {
   return (S.dept && S.dept.weights) || { '전공적합성': 25, '진로역량': 25, '발전가능성': 20, '인성및공동체역량': 15, '의사소통능력': 15 };
 }
@@ -459,7 +464,7 @@ function docStartPrompt() {
   return `당신은 한국 대학 입시 서류 기반 면접관이다. ${S.univ.name} ${S.dept.name} 지원자의 학교생활기록부를 분석하고 면접 질문 ${S.qCount}개를 생성하라.
 
 [학교생활기록부]
-${S.recordText.value}
+${recSrc()}
 
 [채점 역량 반영 비율 — 고르게 질문하라]
 - 전공적합성 ${w['전공적합성']}%
@@ -483,7 +488,7 @@ function docFollowupPrompt(question, answer) {
 대학: ${S.univ.name}, 학과: ${S.dept.name}
 
 [학교생활기록부]
-${S.recordText.value}
+${recSrc()}
 
 직전 질문: ${question}
 지원자 답변: ${answer}
@@ -504,7 +509,7 @@ function docScorePrompt(main, answer, followup, followupAnswer) {
   return `당신은 한국 대학 입시 서류 기반 면접 평가자다. ${S.univ.name} ${S.dept.name} 지원자의 답변을 대학별 반영 비율에 따라 5개 역량을 A~F로 채점하고 환산 점수로 합산하라.
 
 [학교생활기록부]
-${S.recordText.value}
+${recSrc()}
 
 질문: ${main}
 지원자 첫 답변: ${answer}
@@ -864,7 +869,7 @@ async function ocrPdfWithTesseract(pdfData, onProgress) {
     }
   } catch {}
   const pdf = await window.pdfjsLib.getDocument({ data: pdfData }).promise;
-  const maxPages = Math.min(pdf.numPages || 0, 10);
+  const maxPages = Math.min(pdf.numPages || 0, 30);
   if (!maxPages) throw new Error('PDF 페이지를 읽지 못했습니다.');
   let out = '';
   for (let p = 1; p <= maxPages; p++) {
@@ -934,7 +939,7 @@ async function handleRecordFile(file) {
     if (!isUsableRecordText(text)) {
       throw new Error('이 파일에서 텍스트를 추출하지 못했습니다. TXT 또는 HTML로 변환해 올려주세요.');
     }
-    const MAX_RECORD_CHARS = 15000;
+    const MAX_RECORD_CHARS = 80000;
     let truncated = false;
     if (text.length > MAX_RECORD_CHARS) {
       text = text.slice(0, MAX_RECORD_CHARS);
@@ -945,7 +950,7 @@ async function handleRecordFile(file) {
     el.recordText.disabled = false;
     el.recordMeta.hidden = false;
     el.recordFname.textContent = file.name;
-    el.recordCharcnt.textContent = `추출 완료 · ${text.length.toLocaleString()}자 (${source || 'TEXT'})${truncated ? ' · 앞 15,000자만 사용' : ''} · 아래에서 수정할 수 있습니다.`;
+    el.recordCharcnt.textContent = `추출 완료 · ${text.length.toLocaleString()}자 (${source || 'TEXT'})${truncated ? ' · 앞 80,000자만 사용' : ''} · 아래에서 수정할 수 있습니다.`;
     toast('생기부 텍스트 추출 완료');
   } catch (e) {
     el.recordCharcnt.textContent = '추출 실패. ' + e.message;
@@ -1019,6 +1024,7 @@ async function startInterview() {
   S.compBusy = false;
   S.docAnalysis = '';
   S.docQuestionNotes = [];
+  S.recordProfile = null;
   el.compSection.hidden = true;
   el.trvSection.hidden = true;
   el.anSection.hidden = true;
@@ -1053,6 +1059,17 @@ async function startInterview() {
         askQuestion(0, { speakIt: true });
       }
     } else {
+      try {
+        const pr = await fetch('/api/summarize-record', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: S.recordText.value }),
+        });
+        const pj = await pr.json();
+        if (pj.ok && pj.profile) S.recordProfile = String(pj.profile);
+      } catch {
+        S.recordProfile = null;
+      }
       const r = await callLLM(docStartPrompt());
       removeMsg(ty);
       S.docAnalysis = String(r.analysis || '');
@@ -1757,6 +1774,7 @@ function resetInterview(full) {
   S.compBusy = false;
   S.docAnalysis = '';
   S.docQuestionNotes = [];
+  S.recordProfile = null;
   S.viewRecordsData = [];
   S.currentRecord = null;
   el.compSection.hidden = true;
