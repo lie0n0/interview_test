@@ -56,6 +56,10 @@ const MODELS = {
   fallback: 'opencode/mimo-v2.5-free',            // 폴백 (검증됨, cost 0)
 };
 
+/** Gemini 직접 호출용 (zen 직통이 막힌 환경·Render 복구용, 무료 키 필요) */
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+
 /** Render 컨테이너 여부 (Render가 자동 설정) + zen 직접 호출용 세션 ID */
 const ON_RENDER = process.env.RENDER === 'true';
 const ZEN_SESSION_ID = crypto.randomUUID();
@@ -405,24 +409,91 @@ function extractJson(text) {
   return null;
 }
 
-/** LLM 1회 호출 → {json, text} (파싱 실패 시 throw) */
+function callGemini(modelName, prompt, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      model: modelName,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const req = https.request(
+      {
+        hostname: 'generativelanguage.googleapis.com',
+        path: '/v1beta/openai/chat/completions',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': GEMINI_API_KEY,
+          'Content-Length': Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (d) => (data += d));
+        res.on('end', () => {
+          if (res.statusCode !== 200) {
+            reject(new Error(`Gemini 호출 실패: HTTP ${res.statusCode} — ${data.slice(0, 200)}`));
+            return;
+          }
+          try {
+            const content = JSON.parse(data).choices?.[0]?.message?.content;
+            if (typeof content !== 'string' || !content.trim()) {
+              reject(new Error('Gemini 호출 실패: content 없음'));
+              return;
+            }
+            resolve(content);
+          } catch {
+            reject(new Error('Gemini 호출 실패: 응답 파싱 오류'));
+          }
+        });
+      }
+    );
+    req.on('error', (e) => reject(new Error(`Gemini 호출 실패: ${e.message}`)));
+    req.setTimeout(timeoutMs, () => req.destroy(new Error('Gemini 호출 시간 초과')));
+    req.write(body);
+    req.end();
+  });
+}
+
+/** LLM 1회 호출 → {json, text} (파싱 실패 시 throw): zen 직통 → Gemini(키 있을 때) → CLI(Render 제외) */
 async function llm(prompt, { model = 'interviewer', strict = false, timeoutMs = 240000 } = {}) {
   const modelId = MODELS[model] || model;
   const finalPrompt = strict
     ? prompt +
       '\n\n(중요: 오직 유효한 JSON 객체 하나만 출력하라. 마크다운, 코드 펜스, 설명 텍스트는 절대 포함하지 말 것.)'
     : prompt;
-  let text;
+  const errors = [];
   try {
-    text = await callZenDirect(modelId, finalPrompt, timeoutMs);
+    const text = await callZenDirect(modelId, finalPrompt, timeoutMs);
+    const json = extractJson(text.trim());
+    if (!json) throw new Error('LLM 응답에서 JSON을 찾지 못했습니다.');
+    return { json, text };
   } catch (e) {
-    if (ON_RENDER) throw e;
-    const { stdout } = await callOpenCode(modelId, finalPrompt, timeoutMs);
-    text = extractCompletion(stdout).trim();
+    errors.push(e.message);
   }
-  const json = extractJson(text.trim());
-  if (!json) throw new Error('LLM 응답에서 JSON을 찾지 못했습니다.');
-  return { json, text };
+  if (GEMINI_API_KEY) {
+    try {
+      const text = await callGemini(GEMINI_MODEL, finalPrompt, Math.min(timeoutMs, 120000));
+      const json = extractJson(text.trim());
+      if (!json) throw new Error('LLM 응답에서 JSON을 찾지 못했습니다.');
+      return { json, text };
+    } catch (e) {
+      errors.push(e.message);
+    }
+  }
+  if (!ON_RENDER) {
+    try {
+      const { stdout } = await callOpenCode(modelId, finalPrompt, timeoutMs);
+      const text = extractCompletion(stdout).trim();
+      const json = extractJson(text.trim());
+      if (!json) throw new Error('LLM 응답에서 JSON을 찾지 못했습니다.');
+      return { json, text };
+    } catch (e) {
+      errors.push(e.message);
+    }
+  }
+  throw new Error(
+    'LLM 호출 실패: ' + errors.join(' / ') + (GEMINI_API_KEY ? '' : ' (Render에서는 대시보드 Environment에 GEMINI_API_KEY를 설정하세요)')
+  );
 }
 
 /** 재시도 체인: 기본 → 스트릭트 → 폴백 모델 */
@@ -926,7 +997,7 @@ opencodeReady.then((r) => {
 server.listen(PORT, () => {
   console.log('');
   console.log('  AI 면접 연습실: http://localhost:' + PORT);
-  console.log('  LLM: opencode zen 무료 모델 (' + MODELS.interviewer + ' / 폴백 ' + MODELS.fallback + ')');
+  console.log('  LLM: opencode zen 무료 모델 (' + MODELS.interviewer + ' / 폴백 ' + MODELS.fallback + ')' + (GEMINI_API_KEY ? ' + Gemini 폴백(' + GEMINI_MODEL + ')' : ' (GEMINI_API_KEY 미설정 — Render에서는 필수)'));
   console.log('  종료: Ctrl+C');
   console.log('');
 });
