@@ -60,7 +60,9 @@ const MODELS = {
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
-/** Render 컨테이너 여부 (Render가 자동 설정) + zen 직접 호출용 세션 ID */
+/** Pollinations (키 없이 무료 호출, Render 기본 경로) */
+const POLLINATIONS_MODEL = process.env.POLLINATIONS_MODEL || 'openai';
+
 const ON_RENDER = process.env.RENDER === 'true';
 const ZEN_SESSION_ID = crypto.randomUUID();
 
@@ -409,6 +411,50 @@ function extractJson(text) {
   return null;
 }
 
+function callPollinations(modelName, prompt, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      model: modelName,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const req = https.request(
+      {
+        hostname: 'text.pollinations.ai',
+        path: '/openai',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (d) => (data += d));
+        res.on('end', () => {
+          if (res.statusCode !== 200) {
+            reject(new Error(`Pollinations 호출 실패: HTTP ${res.statusCode} — ${data.slice(0, 200)}`));
+            return;
+          }
+          try {
+            const content = JSON.parse(data).choices?.[0]?.message?.content;
+            if (typeof content !== 'string' || !content.trim()) {
+              reject(new Error('Pollinations 호출 실패: content 없음'));
+              return;
+            }
+            resolve(content);
+          } catch {
+            reject(new Error('Pollinations 호출 실패: 응답 파싱 오류'));
+          }
+        });
+      }
+    );
+    req.on('error', (e) => reject(new Error(`Pollinations 호출 실패: ${e.message}`)));
+    req.setTimeout(timeoutMs, () => req.destroy(new Error('Pollinations 호출 시간 초과')));
+    req.write(body);
+    req.end();
+  });
+}
+
 function callGemini(modelName, prompt, timeoutMs) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
@@ -454,7 +500,7 @@ function callGemini(modelName, prompt, timeoutMs) {
   });
 }
 
-/** LLM 1회 호출 → {json, text} (파싱 실패 시 throw): zen 직통 → Gemini(키 있을 때) → CLI(Render 제외) */
+/** LLM 1회 호출 → {json, text} (파싱 실패 시 throw): zen 직통 → Pollinations(키 불필요) → Gemini(키 있을 때) → CLI(Render 제외) */
 async function llm(prompt, { model = 'interviewer', strict = false, timeoutMs = 240000 } = {}) {
   const modelId = MODELS[model] || model;
   const finalPrompt = strict
@@ -464,6 +510,14 @@ async function llm(prompt, { model = 'interviewer', strict = false, timeoutMs = 
   const errors = [];
   try {
     const text = await callZenDirect(modelId, finalPrompt, timeoutMs);
+    const json = extractJson(text.trim());
+    if (!json) throw new Error('LLM 응답에서 JSON을 찾지 못했습니다.');
+    return { json, text };
+  } catch (e) {
+    errors.push(e.message);
+  }
+  try {
+    const text = await callPollinations(POLLINATIONS_MODEL, finalPrompt, Math.min(timeoutMs, 120000));
     const json = extractJson(text.trim());
     if (!json) throw new Error('LLM 응답에서 JSON을 찾지 못했습니다.');
     return { json, text };
@@ -480,20 +534,16 @@ async function llm(prompt, { model = 'interviewer', strict = false, timeoutMs = 
       errors.push(e.message);
     }
   }
-  if (!ON_RENDER) {
-    try {
-      const { stdout } = await callOpenCode(modelId, finalPrompt, timeoutMs);
-      const text = extractCompletion(stdout).trim();
-      const json = extractJson(text.trim());
-      if (!json) throw new Error('LLM 응답에서 JSON을 찾지 못했습니다.');
-      return { json, text };
-    } catch (e) {
-      errors.push(e.message);
-    }
+  try {
+    const { stdout } = await callOpenCode(modelId, finalPrompt, timeoutMs);
+    const text = extractCompletion(stdout).trim();
+    const json = extractJson(text.trim());
+    if (!json) throw new Error('LLM 응답에서 JSON을 찾지 못했습니다.');
+    return { json, text };
+  } catch (e) {
+    errors.push(e.message);
   }
-  throw new Error(
-    'LLM 호출 실패: ' + errors.join(' / ') + (GEMINI_API_KEY ? '' : ' (Render에서는 대시보드 Environment에 GEMINI_API_KEY를 설정하세요)')
-  );
+  throw new Error('LLM 호출 실패: ' + errors.join(' / '));
 }
 
 /** 재시도 체인: 기본 → 스트릭트 → 폴백 모델 */
@@ -573,7 +623,8 @@ async function buildRecordProfile(text) {
   const t = String(text || '').trim();
   if (t.length <= PROFILE_CHUNK_CHARS) return { profile: t, chunked: false, chunks: 1 };
   const chunks = splitRecordChunks(t);
-  const parts = await Promise.all(chunks.map((c, i) => summarizeRecordChunk(i + 1, chunks.length, c)));
+  const parts = [];
+  for (let i = 0; i < chunks.length; i++) parts.push(await summarizeRecordChunk(i + 1, chunks.length, chunks[i]));
   return { profile: parts.join('\n\n').slice(0, 7000), chunked: true, chunks: chunks.length };
 }
 
@@ -982,10 +1033,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 // opencode 자동 점검은 백그라운드로 — listen 차단 없이 health check 통과
-// Render에서는 CLI를 쓰지 않으므로(직접 호출 전용) 설치를 건너뛴다
-const opencodeReady = ON_RENDER
-  ? Promise.resolve({ ok: true, source: 'zen 직접 호출 (CLI 미사용)' })
-  : ensureOpencode();
+const opencodeReady = ensureOpencode();
 opencodeReady.then((r) => {
   if (r.ok) {
     console.log(`[정보] opencode 확인: ${r.source} (${MODELS.interviewer})`);
@@ -997,7 +1045,7 @@ opencodeReady.then((r) => {
 server.listen(PORT, () => {
   console.log('');
   console.log('  AI 면접 연습실: http://localhost:' + PORT);
-  console.log('  LLM: opencode zen 무료 모델 (' + MODELS.interviewer + ' / 폴백 ' + MODELS.fallback + ')' + (GEMINI_API_KEY ? ' + Gemini 폴백(' + GEMINI_MODEL + ')' : ' (GEMINI_API_KEY 미설정 — Render에서는 필수)'));
+  console.log('  LLM: zen 직통 → Pollinations(' + POLLINATIONS_MODEL + ', 키 불필요)' + (GEMINI_API_KEY ? ' → Gemini(' + GEMINI_MODEL + ')' : '') + ' → CLI');
   console.log('  종료: Ctrl+C');
   console.log('');
 });
