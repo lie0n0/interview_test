@@ -63,7 +63,6 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 /** Pollinations (키 없이 무료 호출, Render 기본 경로) */
 const POLLINATIONS_MODEL = process.env.POLLINATIONS_MODEL || 'openai';
 
-const ON_RENDER = process.env.RENDER === 'true';
 const ZEN_SESSION_ID = crypto.randomUUID();
 
 const MIME = {

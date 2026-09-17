@@ -241,15 +241,6 @@ function makeRecoveryCode() {
   return c;
 }
 
-async function api(path, opts = {}) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (S.token) headers.Authorization = 'Bearer ' + S.token;
-  const res = await fetch(path, { ...opts, headers });
-  const data = await res.json();
-  if (!data.ok) throw new Error(data.error || '요청에 실패했습니다.');
-  return data;
-}
-
 let authTab = 'login';
 
 function openAuth(tab = 'login') {
