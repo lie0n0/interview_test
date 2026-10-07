@@ -246,42 +246,16 @@
         <div class="iv-row">
           <div class="iv-card" id="iv-male">
             <div class="iv-live-dot" aria-hidden="true"><span></span>LIVE</div>
-            <div class="iv-photo" aria-hidden="true">
-              <svg viewBox="0 0 120 120" role="img" aria-label="남자 면접관 일러스트">
-                <circle cx="60" cy="60" r="58" fill="#dbe4ff" />
-                <circle cx="60" cy="60" r="58" fill="none" stroke="#b9c6f5" stroke-width="2" />
-                <path d="M22 118c2-24 18-38 38-38s36 14 38 38z" fill="#2b3a67" />
-                <path d="M52 82l8 10 8-10 4-14H48z" fill="#ffffff" />
-                <path d="M57 86l3 12 3-12 2-6h-10z" fill="#4f5dff" />
-                <ellipse cx="60" cy="56" rx="20" ry="24" fill="#f3c9a2" />
-                <path d="M40 52c-1-16 8-26 20-26s21 10 20 26c-1-8-3-12-6-14-4 5-24 5-28 0-3 2-5 6-6 14z" fill="#23283b" />
-                <path d="M40 50c-2 8-3 14-2 20 3 1 6 0 7-2z" fill="#23283b" />
-                <path d="M80 50c2 8 3 14 2 20-3 1-6 0-7-2z" fill="#23283b" />
-                <circle cx="52" cy="58" r="1.8" fill="#23283b" />
-                <circle cx="68" cy="58" r="1.8" fill="#23283b" />
-                <path d="M54 70q6 4 12 0" stroke="#8a5a3b" stroke-width="2" fill="none" stroke-linecap="round" />
-              </svg>
+            <div class="iv-photo">
+              <img src="assets/interviewer-male.jpg" alt="남자 면접관 사진" />
             </div>
             <div class="iv-eq" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
             <div class="iv-name">남자 면접관 <span class="iv-badge" id="iv-male-badge">대기</span></div>
           </div>
           <div class="iv-card" id="iv-female">
             <div class="iv-live-dot" aria-hidden="true"><span></span>LIVE</div>
-            <div class="iv-photo" aria-hidden="true">
-              <svg viewBox="0 0 120 120" role="img" aria-label="여자 면접관 일러스트">
-                <circle cx="60" cy="60" r="58" fill="#ffe6ef" />
-                <circle cx="60" cy="60" r="58" fill="none" stroke="#f3b8cf" stroke-width="2" />
-                <path d="M30 118c0-26 12-44 30-44s30 18 30 44z" fill="#5b3a29" />
-                <path d="M24 118c2-26 16-40 36-40s34 14 36 40z" fill="#0f766e" />
-                <path d="M53 80l7 12 7-12 3-12H50z" fill="#fff7ed" />
-                <ellipse cx="60" cy="54" rx="19" ry="23" fill="#f6cfa8" />
-                <path d="M41 50c0-15 8-25 19-25s19 10 19 25c0-9-2-13-5-15-8-4-21-4-28 0-3 2-5 6-5 15z" fill="#5b3a29" />
-                <path d="M41 48c-4 10-5 22-3 34 3 2 7 1 8-1 0-12 1-24 4-31z" fill="#5b3a29" />
-                <path d="M79 48c4 10 5 22 3 34-3 2-7 1-8-1 0-12-1-24-4-31z" fill="#5b3a29" />
-                <circle cx="53" cy="56" r="1.8" fill="#23283b" />
-                <circle cx="67" cy="56" r="1.8" fill="#23283b" />
-                <path d="M55 68q5 4 10 0" stroke="#8a5a3b" stroke-width="2" fill="none" stroke-linecap="round" />
-              </svg>
+            <div class="iv-photo">
+              <img src="assets/interviewer-female.jpg" alt="여자 면접관 사진" />
             </div>
             <div class="iv-eq" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
             <div class="iv-name">여자 면접관 <span class="iv-badge" id="iv-female-badge">대기</span></div>
@@ -297,7 +271,9 @@
             </div>
           </div>
         </div>
-        <p class="hint center">카메라 정면을 봐주세요. 질문하는 면접관이 말하고, 눈맞춤·자세 힌트가 아래에 표시됩니다.</p>
+        <p class="hint center">카메라 정면을 봐주세요. 질문하는 면접관이 말하고, 눈맞춤·자세 힌트가 아래에 표시됩니다.
+          <button id="btn-camera-retry" class="link-btn" type="button" hidden>카메라 다시 켜기</button>
+        </p>
       </div>
 
       <div id="chat" class="chat" aria-live="polite"></div>

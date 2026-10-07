@@ -121,6 +121,7 @@ const el = {
   selfVideo: $('self-video'),
   chipGaze: $('chip-gaze'),
   chipPosture: $('chip-posture'),
+  btnCameraRetry: $('btn-camera-retry'),
   gazeSummary: $('gaze-summary'),
 
   chat: $('chat'),
@@ -641,8 +642,14 @@ function setChip(node, text, cls) {
 }
 
 async function startLiveCamera() {
+  if (window.isSecureContext === false) {
+    toast('카메라가 차단된 페이지입니다. http://localhost:3000 으로 접속해 주세요 (IP 주소·파일 직접 열기에서는 카메라가 동작하지 않습니다).', true);
+    showCameraRetry();
+    return false;
+  }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    toast('이 브라우저는 카메라를 지원하지 않습니다. 채팅 면접으로 진행합니다.', true);
+    toast('이 브라우저는 카메라를 지원하지 않습니다. 크롬·엣지 최신 버전으로 접속해 주세요.', true);
+    showCameraRetry();
     return false;
   }
   try {
@@ -650,22 +657,61 @@ async function startLiveCamera() {
       video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
       audio: false,
     });
+    const track = stream.getVideoTracks()[0];
+    if (!track) throw Object.assign(new Error('no-track'), { name: 'NotFoundError' });
+    track.onended = () => {
+      if (S.view !== 'interview') return;
+      S.liveActive = false;
+      setChip(el.chipGaze, '카메라 연결 끊김', 'bad');
+      setChip(el.chipPosture, '카메라를 다시 켜주세요', 'warn');
+      showCameraRetry();
+    };
     S.liveStream = stream;
     el.selfVideo.srcObject = stream;
     await el.selfVideo.play().catch(() => {});
     S.liveActive = true;
+    hideCameraRetry();
     setChip(el.chipGaze, '눈맞춤 확인 중…', '');
     setChip(el.chipPosture, '자세 확인 중…', '');
     initFaceTracker();
     return true;
   } catch (e) {
-    toast('카메라를 켤 수 없습니다. 채팅 면접으로 진행합니다.', true);
+    const name = (e && e.name) || '';
+    if (name === 'NotAllowedError' || name === 'SecurityError') {
+      toast('카메라 권한이 거부되었습니다. 브라우저 주소창의 카메라 아이콘에서 허용으로 바꾼 뒤 아래 ‘카메라 다시 켜기’를 눌러주세요.', true);
+    } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+      toast('사용 가능한 카메라를 찾지 못했습니다. 카메라가 연결되어 있는지 확인해 주세요.', true);
+    } else if (name === 'NotReadableError' || name === 'TrackStartError') {
+      toast('카메라를 다른 앱(Zoom 등)이 사용 중입니다. 종료 후 ‘카메라 다시 켜기’를 눌러주세요.', true);
+    } else {
+      toast('카메라를 켤 수 없습니다(' + (e && e.message ? e.message : name || '알 수 없음') + '). ‘카메라 다시 켜기’로 재시도할 수 있습니다.', true);
+    }
+    showCameraRetry();
     return false;
+  }
+}
+
+function showCameraRetry() {
+  if (el.btnCameraRetry) el.btnCameraRetry.hidden = false;
+}
+function hideCameraRetry() {
+  if (el.btnCameraRetry) el.btnCameraRetry.hidden = true;
+}
+
+async function retryLiveCamera() {
+  if (S.view !== 'interview') return;
+  hideCameraRetry();
+  S.liveMode = true;
+  el.liveStage.hidden = false;
+  const ok = await startLiveCamera();
+  if (!ok) {
+    toast('채팅 면접으로 계속 진행합니다. 카메라는 언제든 다시 켤 수 있습니다.');
   }
 }
 
 function stopLiveCamera() {
   if (faceTimer) { clearInterval(faceTimer); faceTimer = null; }
+  hideCameraRetry();
   if (S.liveStream) {
     S.liveStream.getTracks().forEach((t) => { try { t.stop(); } catch {} });
     S.liveStream = null;
@@ -1233,11 +1279,7 @@ async function startInterview() {
   S.liveMode = !!(el.liveChk && el.liveChk.checked);
   el.liveStage.hidden = !S.liveMode;
   if (S.liveMode) {
-    const camOk = await startLiveCamera();
-    if (!camOk) {
-      S.liveMode = false;
-      el.liveStage.hidden = true;
-    }
+    await startLiveCamera();
   }
 
   startTimer(S.totalMin * 60);
@@ -2164,6 +2206,7 @@ el.btnRecordClear.addEventListener('click', () => {
   updateStart();
 });
 el.btnStart.addEventListener('click', startInterview);
+el.btnCameraRetry.addEventListener('click', retryLiveCamera);
 el.micBtn.addEventListener('click', () => (listening ? stopListen() : startListen()));
 el.btnRetryMic.addEventListener('click', () => {
   el.answerText.value = '';

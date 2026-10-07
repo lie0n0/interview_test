@@ -1244,14 +1244,15 @@ textarea { resize: vertical; line-height: 1.6; }
   background: rgba(79, 93, 255, 0.16);
   box-shadow: 0 0 0 3px rgba(79, 93, 255, 0.25), 0 8px 24px rgba(79, 93, 255, 0.35);
 }
-.iv-photo svg {
+.iv-photo svg, .iv-photo img {
   width: 96px;
   height: 96px;
   border-radius: 50%;
   display: block;
   transform-origin: 50% 90%;
 }
-.iv-card.speaking .iv-photo svg { animation: iv-talk 0.9s ease-in-out infinite; }
+.iv-photo img { object-fit: cover; background: #0c1022; }
+.iv-card.speaking .iv-photo svg, .iv-card.speaking .iv-photo img { animation: iv-talk 0.9s ease-in-out infinite; }
 @keyframes iv-talk {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   30% { transform: translateY(-3px) rotate(-1.2deg); }
@@ -1346,5 +1347,5 @@ textarea { resize: vertical; line-height: 1.6; }
 @media (max-width: 640px) {
   .iv-row { grid-template-columns: 1fr 1fr; }
   .iv-self { grid-column: 1 / -1; }
-  .iv-photo svg { width: 76px; height: 76px; }
+  .iv-photo svg, .iv-photo img { width: 76px; height: 76px; }
 }

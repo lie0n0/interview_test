@@ -52,8 +52,8 @@ const RECORDS_FILE = path.join(DATA_DIR, 'records.json');
 
 /** 무료 zen 모델 레지스트리 (.agents/models.md와 동일 기준) */
 const MODELS = {
-  interviewer: 'opencode/nemotron-3-ultra-free', // 기본 면접관·채점 (검증됨, cost 0)
-  fallback: 'opencode/mimo-v2.5-free',            // 폴백 (검증됨, cost 0)
+  interviewer: 'opencode/nemotron-3-ultra-free', // 기본 면접관·채점 (CLI 실측 동작, cost 0)
+  fallback: 'opencode/mimo-v2.6-flash-free',     // 폴백 (v2.5는 지원 종료로 교체)
 };
 
 /** Gemini 직접 호출용 (zen 직통이 막힌 환경·Render 복구용, 무료 키 필요) */
@@ -71,6 +71,9 @@ const MIME = {
   '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
   '.ico': 'image/x-icon',
 };
 
@@ -79,6 +82,8 @@ const STATIC_ROUTES = new Map([
   ['/index.html', 'index.html'],
   ['/styles.css', 'styles.css'],
   ['/app.js', 'app.js'],
+  ['/assets/interviewer-male.jpg', 'assets/interviewer-male.jpg'],
+  ['/assets/interviewer-female.jpg', 'assets/interviewer-female.jpg'],
 ]);
 
 // 대학 데이터는 서버 시작 시 1회 로드 (수정 시 서버 재시작)
@@ -205,13 +210,20 @@ async function ensureOpencode() {
 
   const localBin = path.join(os.homedir(), '.opencode', 'bin');
   const localBinExe = path.join(localBin, 'opencode');
-
-  // 설치 스크립트의 기본 경로($HOME/.opencode/bin)에 이미 설치된 경우
-  if (fs.existsSync(localBinExe)) {
-    if (!process.env.PATH.split(path.delimiter).includes(localBin)) {
-      process.env.PATH = `${localBin}${path.delimiter}${process.env.PATH}`;
+  // Homebrew 등 잘 알려진 경로도 직접 탐색 — GUI·다른 셸에서 실행하면
+  // PATH에 없어 CLI를 못 찾는 문제(opencode CLI이 있는데도 "없다"고 나오는 원인) 방지
+  const knownExes = [localBinExe, '/opt/homebrew/bin/opencode', '/usr/local/bin/opencode'];
+  for (const exe of knownExes) {
+    if (fs.existsSync(exe)) {
+      const dir = path.dirname(exe);
+      if (!process.env.PATH.split(path.delimiter).includes(dir)) {
+        process.env.PATH = `${dir}${path.delimiter}${process.env.PATH}`;
+      }
+      try {
+        await execFileAsync(exe, ['--version'], { timeout: 15000 });
+        return { ok: true, source: exe };
+      } catch { /* 다음 후보 시도 */ }
     }
-    return { ok: true, source: '~/.opencode/bin' };
   }
 
   // 공식 설치 스크립트 (--no-modify-path: 셸 설정 파일 수정 방지)
@@ -499,7 +511,7 @@ function callGemini(modelName, prompt, timeoutMs) {
   });
 }
 
-/** LLM 1회 호출 → {json, text} (파싱 실패 시 throw): zen 직통 → Pollinations(키 불필요) → Gemini(키 있을 때) → CLI(Render 제외) */
+/** LLM 1회 호출 → {json, text} (파싱 실패 시 throw): CLI(사용자 인증·cost 0, 실측 동작) → zen 직통 → Gemini(키 있을 때) → Pollinations */
 async function llm(prompt, { model = 'interviewer', strict = false, timeoutMs = 240000 } = {}) {
   const modelId = MODELS[model] || model;
   const finalPrompt = strict
@@ -508,15 +520,16 @@ async function llm(prompt, { model = 'interviewer', strict = false, timeoutMs = 
     : prompt;
   const errors = [];
   try {
-    const text = await callZenDirect(modelId, finalPrompt, timeoutMs);
+    const { stdout } = await callOpenCode(modelId, finalPrompt, timeoutMs);
+    const text = extractCompletion(stdout).trim();
     const json = extractJson(text.trim());
     if (!json) throw new Error('LLM 응답에서 JSON을 찾지 못했습니다.');
     return { json, text };
   } catch (e) {
-    errors.push(e.message);
+    errors.push('CLI: ' + e.message);
   }
   try {
-    const text = await callPollinations(POLLINATIONS_MODEL, finalPrompt, Math.min(timeoutMs, 120000));
+    const text = await callZenDirect(modelId, finalPrompt, timeoutMs);
     const json = extractJson(text.trim());
     if (!json) throw new Error('LLM 응답에서 JSON을 찾지 못했습니다.');
     return { json, text };
@@ -534,8 +547,7 @@ async function llm(prompt, { model = 'interviewer', strict = false, timeoutMs = 
     }
   }
   try {
-    const { stdout } = await callOpenCode(modelId, finalPrompt, timeoutMs);
-    const text = extractCompletion(stdout).trim();
+    const text = await callPollinations(POLLINATIONS_MODEL, finalPrompt, Math.min(timeoutMs, 120000));
     const json = extractJson(text.trim());
     if (!json) throw new Error('LLM 응답에서 JSON을 찾지 못했습니다.');
     return { json, text };
@@ -1044,7 +1056,7 @@ opencodeReady.then((r) => {
 server.listen(PORT, () => {
   console.log('');
   console.log('  AI 면접 연습실: http://localhost:' + PORT);
-  console.log('  LLM: zen 직통 → Pollinations(' + POLLINATIONS_MODEL + ', 키 불필요)' + (GEMINI_API_KEY ? ' → Gemini(' + GEMINI_MODEL + ')' : '') + ' → CLI');
+  console.log('  LLM: CLI → zen 직통' + (GEMINI_API_KEY ? ' → Gemini(' + GEMINI_MODEL + ')' : '') + ' → Pollinations(' + POLLINATIONS_MODEL + ')');
   console.log('  종료: Ctrl+C');
   console.log('');
 });
