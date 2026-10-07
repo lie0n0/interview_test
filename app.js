@@ -34,6 +34,14 @@ const S = {
 
   followupActive: false,
   ttsOn: loadTtsPref(),
+  liveMode: true,      // 설정 화면의 라이브 면접관 모드 체크 여부
+  liveActive: false,   // 실제 라이브 진행 중 (카메라 스트림이 살아 있을 때만 true)
+  liveStream: null,
+  speakers: [],        // 문항별 질문자 ('male' | 'female')
+  closingPhase: false, // 마지막 한마디 단계 여부
+  closingDone: false,
+  closingAnswer: '',
+  gaze: { good: 0, total: 0 },
 
   timer: { id: null, left: 0 },
   phase: 'idle',   // idle | ready | listening | thinking
@@ -104,6 +112,16 @@ const el = {
   passagePanel: $('passage-panel'),
   passageText: $('passage-text'),
   btnReplayPassage: $('btn-replay-passage'),
+  liveChk: $('live-chk'),
+  liveStage: $('live-stage'),
+  ivMale: $('iv-male'),
+  ivFemale: $('iv-female'),
+  ivMaleBadge: $('iv-male-badge'),
+  ivFemaleBadge: $('iv-female-badge'),
+  selfVideo: $('self-video'),
+  chipGaze: $('chip-gaze'),
+  chipPosture: $('chip-posture'),
+  gazeSummary: $('gaze-summary'),
 
   chat: $('chat'),
   micBtn: $('mic-btn'),
@@ -411,6 +429,7 @@ function passageStartPrompt() {
 규칙:
 - 제시문은 3~5문장 분량의 논제문 형태로, ${S.dept.name}에 어울리는 주제
 - 질문은 제시문의 핵심 주제·탐구력·종합적 사고를 묻되 ${S.dept.name} 특성이 드러나도록
+- 첫 번째 질문은 반드시 1분 이내 자기소개 요청 (예: "1분 이내로 자기소개를 해주세요")
 - 질문 ${S.qCount}개를 정확히 생성
 - 각 질문은 2~3문장, 한국어
 
@@ -466,6 +485,7 @@ ${recSrc()}
 
 규칙:
 - 생기부의 구체적 근거(수상·활동·세특·진로희망 등)에서 유래한 질문으로
+- 첫 번째 질문은 반드시 1분 이내 자기소개 요청 (예: "1분 이내로 자기소개를 해주세요")
 - 질문 ${S.qCount}개를 정확히 생성
 - 각 질문은 2~3문장, 한국어
 
@@ -548,21 +568,193 @@ function saveTtsPref(on) {
 function cleanForSpeech(t) {
   return t.replace(/[#*`>_~]/g, '').replace(/\s+/g, ' ').trim();
 }
-function koVoice() {
+const FEMALE_VOICE_RE = /yuna|유나|yujeong|유정|sinji|신지|sora|소라|heami|혜미|kyuri|보람|지민|서연|female|woman|girl|aria|nova|수진|다인/i;
+const MALE_VOICE_RE = /male|man|boy|daniel|david|junwoo|준우|민준|지훈|태현|현우|준호/i;
+function koVoices() {
   const vs = window.speechSynthesis ? speechSynthesis.getVoices() : [];
-  const ko = vs.filter((v) => /^ko/i.test(v.lang));
-  return ko.find((v) => /yuna|유나|yujeong|sinji|sora|heami|kyuri|보람/i.test(v.name)) || ko[0] || null;
+  return vs.filter((v) => /^ko/i.test(v.lang));
 }
-function speak(text, onend) {
-  if (!S.ttsOn || !('speechSynthesis' in window)) return;
+function pickVoice(gender) {
+  const ko = koVoices();
+  if (!ko.length) return null;
+  if (gender === 'female') return ko.find((v) => FEMALE_VOICE_RE.test(v.name)) || ko[0];
+  if (gender === 'male') {
+    const m = ko.find((v) => MALE_VOICE_RE.test(v.name) && !FEMALE_VOICE_RE.test(v.name));
+    if (m) return m;
+    const nonFemale = ko.filter((v) => !FEMALE_VOICE_RE.test(v.name));
+    return nonFemale[0] || ko[0];
+  }
+  return ko[0];
+}
+function voiceTune(gender) {
+  return gender === 'male' ? { pitch: 0.75, rate: 0.95 } : { pitch: 1.15, rate: 1.02 };
+}
+function pickSpeaker() {
+  return Math.random() < 0.5 ? 'male' : 'female';
+}
+function speakerLabel(g) {
+  return g === 'male' ? '남자 면접관' : '여자 면접관';
+}
+function setActiveSpeaker(g) {
+  const m = g === 'male';
+  el.ivMale.classList.toggle('speaking', m);
+  el.ivFemale.classList.toggle('speaking', !m);
+  if (el.ivMaleBadge) el.ivMaleBadge.textContent = m ? '질문 중' : '대기';
+  if (el.ivFemaleBadge) el.ivFemaleBadge.textContent = m ? '대기' : '질문 중';
+}
+function clearActiveSpeaker() {
+  el.ivMale.classList.remove('speaking');
+  el.ivFemale.classList.remove('speaking');
+  if (el.ivMaleBadge) el.ivMaleBadge.textContent = '대기';
+  if (el.ivFemaleBadge) el.ivFemaleBadge.textContent = '대기';
+}
+function speak(text, opt) {
+  const o = typeof opt === 'function' ? { onend: opt } : (opt || {});
+  if (!S.ttsOn || !('speechSynthesis' in window)) { if (typeof o.onend === 'function') o.onend(); return; }
+  if (o.liveOnly && !S.liveActive) { if (typeof o.onend === 'function') o.onend(); return; }
   stopSpeak();
   const u = new SpeechSynthesisUtterance(cleanForSpeech(text));
   u.lang = 'ko-KR';
-  u.rate = 1.02;
-  const v = koVoice();
+  const tune = voiceTune(o.gender);
+  u.pitch = tune.pitch;
+  u.rate = tune.rate;
+  const v = pickVoice(o.gender);
   if (v) u.voice = v;
-  u.onend = () => { if (typeof onend === 'function') onend(); };
+  if (o.gender) setActiveSpeaker(o.gender);
+  u.onend = () => { clearActiveSpeaker(); if (typeof o.onend === 'function') o.onend(); };
+  u.onerror = () => { clearActiveSpeaker(); if (typeof o.onend === 'function') o.onend(); };
   speechSynthesis.speak(u);
+}
+
+/* ================= 라이브 카메라 + 시선/자세 추적 ================= */
+
+let faceLM = null;
+let faceLoading = null;
+let faceTimer = null;
+let faceUnavailable = false;
+
+function setChip(node, text, cls) {
+  if (!node) return;
+  node.textContent = text;
+  node.classList.remove('good', 'warn', 'bad');
+  if (cls) node.classList.add(cls);
+}
+
+async function startLiveCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    toast('이 브라우저는 카메라를 지원하지 않습니다. 채팅 면접으로 진행합니다.', true);
+    return false;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+      audio: false,
+    });
+    S.liveStream = stream;
+    el.selfVideo.srcObject = stream;
+    await el.selfVideo.play().catch(() => {});
+    S.liveActive = true;
+    setChip(el.chipGaze, '눈맞춤 확인 중…', '');
+    setChip(el.chipPosture, '자세 확인 중…', '');
+    initFaceTracker();
+    return true;
+  } catch (e) {
+    toast('카메라를 켤 수 없습니다. 채팅 면접으로 진행합니다.', true);
+    return false;
+  }
+}
+
+function stopLiveCamera() {
+  if (faceTimer) { clearInterval(faceTimer); faceTimer = null; }
+  if (S.liveStream) {
+    S.liveStream.getTracks().forEach((t) => { try { t.stop(); } catch {} });
+    S.liveStream = null;
+  }
+  if (el.selfVideo) el.selfVideo.srcObject = null;
+  S.liveActive = false;
+  clearActiveSpeaker();
+  stopSpeak();
+}
+
+function initFaceTracker() {
+  if (faceLM) { startFaceLoop(); return; }
+  if (faceLoading) return;
+  if (faceUnavailable) {
+    setChip(el.chipGaze, '얼굴 추적 사용 불가', 'bad');
+    setChip(el.chipPosture, '카메라 화면을 보며 연습하세요', '');
+    return;
+  }
+  faceLoading = (async () => {
+    const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs');
+    const fileset = await vision.FilesetResolver.forVisionTasks(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+    );
+    faceLM = await vision.FaceLandmarker.createFromOptions(fileset, {
+      baseOptions: {
+        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+        delegate: 'GPU',
+      },
+      runningMode: 'VIDEO',
+      numFaces: 1,
+    });
+    startFaceLoop();
+  })().catch(() => {
+    faceUnavailable = true;
+    setChip(el.chipGaze, '얼굴 추적 사용 불가', 'bad');
+    setChip(el.chipPosture, '카메라 화면을 보며 연습하세요', '');
+  }).finally(() => { faceLoading = null; });
+}
+
+function startFaceLoop() {
+  if (faceTimer) clearInterval(faceTimer);
+  faceTimer = setInterval(() => {
+    if (!faceLM || S.view !== 'interview' || !S.liveActive) return;
+    const v = el.selfVideo;
+    if (!v || v.readyState < 2 || !v.videoWidth) return;
+    try {
+      updateFaceUI(faceLM.detectForVideo(v, performance.now()));
+    } catch {}
+  }, 600);
+}
+
+function updateFaceUI(res) {
+  const lm = res && res.faceLandmarks && res.faceLandmarks[0];
+  if (!lm) {
+    setChip(el.chipGaze, '얼굴이 안 보여요', 'warn');
+    setChip(el.chipPosture, '카메라에 얼굴을 맞춰주세요', 'warn');
+    return;
+  }
+  const gx = (lm[468].x - lm[33].x) / Math.max(1e-6, lm[133].x - lm[33].x);
+  const gr = (lm[473].x - lm[362].x) / Math.max(1e-6, lm[263].x - lm[362].x);
+  const gazeDev = Math.abs(((gx + gr) / 2) - 0.5);
+  let minX = 1, maxX = 0, minY = 1, maxY = 0;
+  for (let k = 0; k < lm.length; k++) {
+    const p = lm[k];
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+  const w = Math.max(1e-6, maxX - minX), h = Math.max(1e-6, maxY - minY);
+  const yaw = (lm[1].x - cx) / w;
+  const eyeMidY = (lm[33].y + lm[263].y) / 2;
+  const pitch = (lm[1].y - eyeMidY) / h;
+
+  const looking = gazeDev < 0.22 && Math.abs(yaw) < 0.15;
+  if (S.phase === 'ready' || S.phase === 'thinking') {
+    S.gaze.total++;
+    if (looking) S.gaze.good++;
+  }
+  if (looking) setChip(el.chipGaze, '눈맞춤 좋아요', 'good');
+  else setChip(el.chipGaze, '카메라(면접관 눈)를 봐주세요', 'warn');
+
+  if (cy > 0.68 || pitch > 0.28) setChip(el.chipPosture, '고개가 숙었어요 · 어깨를 펴고 정면을!', 'warn');
+  else if (h < 0.18) setChip(el.chipPosture, '카메라에 조금 가까이 앉아주세요', 'warn');
+  else if (h > 0.8) setChip(el.chipPosture, '카메라에서 조금 떨어져주세요', 'warn');
+  else if (pitch < -0.22) setChip(el.chipPosture, '고개가 젖혀졌어요 · 편안히 정면을!', 'warn');
+  else if (Math.abs(yaw) > 0.22) setChip(el.chipPosture, '측면을 보고 있어요 · 정면을 봐주세요', 'warn');
+  else setChip(el.chipPosture, '자세 좋아요', 'good');
 }
 function stopSpeak() {
   if ('speechSynthesis' in window) speechSynthesis.cancel();
@@ -660,17 +852,21 @@ function updateMicUI() {
 /* ================= 채팅 렌더링 ================= */
 
 function addBot(text, opt = {}) {
-  if (opt.speakIt) speak(text);
+  const sp = opt.speaker;
+  if (opt.speakIt) speak(text, { gender: sp || undefined, liveOnly: true });
   const msg = document.createElement('div');
   msg.className = 'msg bot';
+  const tag = opt.tag || (sp ? speakerLabel(sp) : '');
   let head = '';
-  if (opt.tag) {
-    head = `<div class="bubble-top"><span class="q-tag">${esc(opt.tag)}</span>
+  if (tag) {
+    head = `<div class="bubble-top"><span class="q-tag">${esc(tag)}</span>
       <button class="replay" type="button" title="다시 듣기">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a9 9 0 0 1 0 14"/></svg>
       </button></div>`;
   }
-  msg.innerHTML = `<div class="avatar">AI</div>
+  const avCls = sp === 'male' ? 'avatar iv-m' : sp === 'female' ? 'avatar iv-f' : 'avatar';
+  const avTxt = sp === 'male' ? '남' : sp === 'female' ? '여' : 'AI';
+  msg.innerHTML = `<div class="${avCls}">${avTxt}</div>
     <div class="bubble">${head}<div class="b-text"></div></div>`;
   msg.querySelector('.b-text').textContent = text;
   if (opt.sub) {
@@ -680,7 +876,7 @@ function addBot(text, opt = {}) {
     sub.textContent = opt.sub;
     msg.querySelector('.bubble').appendChild(sub);
   }
-  msg.querySelector('.replay')?.addEventListener('click', () => speak(text));
+  msg.querySelector('.replay')?.addEventListener('click', () => speak(text, { gender: sp || undefined }));
   el.chat.appendChild(msg);
   scrollChat();
   return msg;
@@ -1016,6 +1212,12 @@ async function startInterview() {
   S.docAnalysis = '';
   S.docQuestionNotes = [];
   S.recordProfile = null;
+  S.speakers = [];
+  S.closingPhase = false;
+  S.closingDone = false;
+  S.closingSpeaker = null;
+  S.closingAnswer = '';
+  S.gaze = { good: 0, total: 0 };
   el.compSection.hidden = true;
   el.trvSection.hidden = true;
   el.anSection.hidden = true;
@@ -1028,6 +1230,16 @@ async function startInterview() {
   el.answerBox.hidden = true;
   el.micLabel.innerHTML = '면접을 준비하고 있어요...';
 
+  S.liveMode = !!(el.liveChk && el.liveChk.checked);
+  el.liveStage.hidden = !S.liveMode;
+  if (S.liveMode) {
+    const camOk = await startLiveCamera();
+    if (!camOk) {
+      S.liveMode = false;
+      el.liveStage.hidden = true;
+    }
+  }
+
   startTimer(S.totalMin * 60);
   setPhase('thinking');
 
@@ -1039,16 +1251,12 @@ async function startInterview() {
       S.passage = String(r.passage || S.dept.passage || '');
       el.passageText.textContent = S.passage;
       el.passagePanel.hidden = false;
-      addBot(String(r.intro || `${S.univ.name} ${S.dept.name} 면접에 오신 것을 환영합니다.`), { tag: '면접관', speakIt: true });
+      addBot(String(r.intro || `${S.univ.name} ${S.dept.name} 면접에 오신 것을 환영합니다.`), { tag: '면접관', speaker: pickSpeaker(), speakIt: true });
       const qs = Array.isArray(r.questions) ? r.questions : [];
       if (!qs.length) throw new Error('면접관이 질문을 생성하지 못했습니다.');
       S.questions = qs.slice(0, S.qCount);
-      if (S.ttsOn) {
-        speak(S.passage, () => { if (!S.timerExpired && S.ttsOn) speak(String(S.questions[0])); });
-        askQuestion(0, { speakIt: false });
-      } else {
-        askQuestion(0, { speakIt: true });
-      }
+      ensureSelfIntroFirst();
+      askQuestion(0);
     } else {
       try {
         const pr = await fetch('/api/summarize-record', {
@@ -1071,6 +1279,7 @@ async function startInterview() {
       const qs = Array.isArray(r.questions) ? r.questions : [];
       if (!qs.length) throw new Error('면접관이 질문을 생성하지 못했습니다.');
       S.questions = qs.slice(0, S.qCount);
+      ensureSelfIntroFirst();
       askQuestion(0);
     }
   } catch (e) {
@@ -1081,17 +1290,43 @@ async function startInterview() {
   }
 }
 
+const SELF_INTRO_Q = '지원자에 대해 먼저 알고 싶습니다. 1분 이내로 자기소개를 해주세요.';
+const CLOSING_Q = '마지막으로, 면접관에게 하고 싶은 말이나 추가로 어필하고 싶은 점이 있으면 자유롭게 말씀해 주세요.';
+
+function ensureSelfIntroFirst() {
+  const first = S.questions[0];
+  const firstText = typeof first === 'string' ? first : (first && (first.question || first.text)) || '';
+  if (/자기소개|소개해/.test(firstText)) return;
+  if (S.mode === 'document') {
+    S.questions = [{ question: SELF_INTRO_Q, basedOn: '기본 인적사항 확인' }, ...S.questions].slice(0, S.qCount);
+  } else {
+    S.questions = [SELF_INTRO_Q, ...S.questions].slice(0, S.qCount);
+  }
+}
+
 function askQuestion(i, opt) {
   S.qIndex = i;
   const raw = S.questions[i];
   const text = typeof raw === 'string' ? raw : (raw && (raw.question || raw.text)) || '';
   const basedOn = typeof raw === 'object' && raw ? (raw.basedOn || '') : '';
+  const sp = pickSpeaker();
+  S.speakers[i] = sp;
   updateProgress();
   addBot(text, {
-    tag: S.mode === 'passage' ? `문항 ${i + 1}` : `문항 ${i + 1}`,
+    tag: `문항 ${i + 1}` + (i === 0 ? ' · 자기소개' : '') + ` · ${speakerLabel(sp)}`,
+    speaker: sp,
     sub: basedOn ? '〔생기부 근거: ' + basedOn + '〕' : '',
     speakIt: !opt || opt.speakIt !== false,
   });
+  setPhase('ready');
+}
+
+function askClosing() {
+  S.closingPhase = true;
+  const sp = pickSpeaker();
+  S.closingSpeaker = sp;
+  el.progress.textContent = '마지막 한마디';
+  addBot(CLOSING_Q, { tag: `마지막 한마디 · ${speakerLabel(sp)}`, speaker: sp, speakIt: true });
   setPhase('ready');
 }
 
@@ -1133,6 +1368,16 @@ async function submitAnswer() {
   el.answerBox.hidden = true;
   el.answerText.value = '';
   finalTranscript = '';
+  if (S.closingPhase) {
+    addUser(text);
+    S.closingAnswer = text;
+    S.transcript.push({ question: CLOSING_Q, answer: text, closing: true, speaker: S.closingSpeaker });
+    S.closingPhase = false;
+    S.closingDone = true;
+    addSystem('마지막 한마디를 기록했습니다.');
+    await finalize();
+    return;
+  }
   addUser(text);
 
   if (S.mode === 'document') {
@@ -1161,7 +1406,7 @@ async function doFollowup() {
     S.followupActive = true;
     S.followupQ = String(r.question || '');
     if (!S.followupQ) throw new Error('꼬리질문이 비어 있습니다.');
-    addBot(S.followupQ, { tag: '꼬리질문', speakIt: true });
+    addBot(S.followupQ, { tag: '꼬리질문', speaker: pickSpeaker(), speakIt: true });
     setPhase('ready');
   } catch (e) {
     removeMsg(ty);
@@ -1198,6 +1443,8 @@ async function scoreAndAdvance(main, followupAnswer) {
     const next = S.qIndex + 1;
     if (next < S.questions.length) {
       askQuestion(next);
+    } else if (!S.closingDone) {
+      askClosing();
     } else {
       await finalize();
     }
@@ -1274,8 +1521,20 @@ async function finalize() {
   clearTimer();
   setPhase('idle');
   el.micBtn.disabled = true;
+  stopLiveCamera();
+  el.liveStage.hidden = true;
   switchView('end');
-  if (S.ttsOn) speak('면접이 끝났습니다.');
+  if (S.gaze.total > 5) {
+    const pct = Math.round((S.gaze.good / S.gaze.total) * 100);
+    el.gazeSummary.hidden = false;
+    el.gazeSummary.textContent = `라이브 분석 · 눈맞춤 ${pct}% — ` + (pct >= 70
+      ? '면접관과 눈을 잘 마주쳤어요.'
+      : pct >= 40
+        ? '시선이 가끔 흔들렸어요. 카메라 정면을 의식해 보세요.'
+        : '시선이 자주 벗어났어요. 카메라 렌즈를 보고 말하는 연습을 해보세요.');
+  } else {
+    el.gazeSummary.hidden = true;
+  }
   generateComprehensive();
 }
 
@@ -1756,9 +2015,14 @@ function restoreFromFile(file) {
 function resetInterview(full) {
   stopSpeak();
   stopListen();
+  stopLiveCamera();
+  el.liveStage.hidden = true;
   clearTimer();
   S.questions = []; S.qIndex = 0; S.scores = []; S.passage = ''; S.followupQ = null;
   S.followupActive = false; pendingMain = null;
+  S.closingPhase = false; S.closingDone = false; S.closingSpeaker = null; S.closingAnswer = '';
+  S.speakers = [];
+  S.gaze = { good: 0, total: 0 };
   S.busy = false; S.timerExpired = false; S.overtimeSec = 0; S.phase = 'idle';
   S.transcript = [];
   S.comprehensive = null;
