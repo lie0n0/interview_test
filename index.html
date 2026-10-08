@@ -260,18 +260,15 @@
             <div class="iv-eq" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
             <div class="iv-name">여자 면접관 <span class="iv-badge" id="iv-female-badge">대기</span></div>
           </div>
-          <div class="iv-self">
-            <div class="iv-self-video-wrap">
-              <video id="self-video" playsinline muted autoplay></video>
-              <span class="iv-self-label">나</span>
-            </div>
-            <div id="gaze-chips" class="gaze-chips">
-              <span class="chip" id="chip-gaze">눈맞춤 확인 중…</span>
-              <span class="chip" id="chip-posture">자세 확인 중…</span>
-            </div>
+          <div class="iv-self-cam" hidden>
+            <video id="self-video" playsinline muted autoplay></video>
+          </div>
+          <div id="gaze-chips" class="gaze-chips">
+            <span class="chip" id="chip-gaze">눈맞춤 확인 중…</span>
+            <span class="chip" id="chip-posture">자세 확인 중…</span>
           </div>
         </div>
-        <p class="hint center">카메라 정면을 봐주세요. 질문하는 면접관이 말하고, 눈맞춤·자세 힌트가 아래에 표시됩니다.
+        <p class="hint center">내 화면은 표시되지 않고 분석에만 사용됩니다. 카메라 정면을 보면 눈맞춤·자세 힌트가 아래에 표시되고, 종료 후 태도 점수에 반영됩니다.
           <button id="btn-camera-retry" class="link-btn" type="button" hidden>카메라 다시 켜기</button>
         </p>
       </div>

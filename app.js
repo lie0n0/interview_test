@@ -42,6 +42,9 @@ const S = {
   closingDone: false,
   closingAnswer: '',
   gaze: { good: 0, total: 0 },
+  posture: { bad: 0, total: 0 },
+  attitudePenalty: 0,
+  gazePct: null,
 
   timer: { id: null, left: 0 },
   phase: 'idle',   // idle | ready | listening | thinking
@@ -765,7 +768,9 @@ function startFaceLoop() {
 
 function updateFaceUI(res) {
   const lm = res && res.faceLandmarks && res.faceLandmarks[0];
+  const counting = S.phase === 'ready' || S.phase === 'thinking';
   if (!lm) {
+    if (counting) S.gaze.total++;
     setChip(el.chipGaze, '얼굴이 안 보여요', 'warn');
     setChip(el.chipPosture, '카메라에 얼굴을 맞춰주세요', 'warn');
     return;
@@ -788,9 +793,12 @@ function updateFaceUI(res) {
   const pitch = (lm[1].y - eyeMidY) / h;
 
   const looking = gazeDev < 0.22 && Math.abs(yaw) < 0.15;
-  if (S.phase === 'ready' || S.phase === 'thinking') {
+  const badPosture = cy > 0.68 || pitch > 0.28 || h < 0.18 || h > 0.8 || pitch < -0.22 || Math.abs(yaw) > 0.22;
+  if (counting) {
     S.gaze.total++;
     if (looking) S.gaze.good++;
+    S.posture.total++;
+    if (badPosture) S.posture.bad++;
   }
   if (looking) setChip(el.chipGaze, '눈맞춤 좋아요', 'good');
   else setChip(el.chipGaze, '카메라(면접관 눈)를 봐주세요', 'warn');
@@ -1264,6 +1272,9 @@ async function startInterview() {
   S.closingSpeaker = null;
   S.closingAnswer = '';
   S.gaze = { good: 0, total: 0 };
+  S.posture = { bad: 0, total: 0 };
+  S.attitudePenalty = 0;
+  S.gazePct = null;
   el.compSection.hidden = true;
   el.trvSection.hidden = true;
   el.anSection.hidden = true;
@@ -1536,7 +1547,7 @@ function gradeFromRatio(ratio, mode) {
   return 'F';
 }
 
-function computeAggregates(scores = S.scores, mode = S.mode, overtimeSec = S.overtimeSec) {
+function computeAggregates(scores = S.scores, mode = S.mode, overtimeSec = S.overtimeSec, attitudePenalty = S.attitudePenalty) {
   const n = scores.length;
   const cats = mode === 'passage' ? PASSAGE_CATS : DOC_CATS;
   const agg = {};
@@ -1553,9 +1564,10 @@ function computeAggregates(scores = S.scores, mode = S.mode, overtimeSec = S.ove
   const avgTotal = n ? scores.reduce((a, b) => a + b.total, 0) / n : 0;
   let finalTotal = Math.round(avgTotal);
   const overtimePenalty = Math.min(20, Math.floor(overtimeSec / 60) * 2); // 초과 1분당 2점 감점, 최대 20점
-  finalTotal = Math.max(0, finalTotal - overtimePenalty);
+  const att = Math.max(0, Math.min(10, Math.round(Number(attitudePenalty) || 0))); // 태도 감점, 최대 10점
+  finalTotal = Math.max(0, finalTotal - overtimePenalty - att);
   const feedbacks = [...new Set(scores.map((x) => x.feedback).filter(Boolean))];
-  return { n, agg, avgTotal, finalTotal, feedbacks, overtimePenalty };
+  return { n, agg, avgTotal, finalTotal, feedbacks, overtimePenalty, attitudePenalty: att };
 }
 
 async function finalize() {
@@ -1566,16 +1578,26 @@ async function finalize() {
   stopLiveCamera();
   el.liveStage.hidden = true;
   switchView('end');
-  if (S.gaze.total > 5) {
-    const pct = Math.round((S.gaze.good / S.gaze.total) * 100);
-    el.gazeSummary.hidden = false;
-    el.gazeSummary.textContent = `라이브 분석 · 눈맞춤 ${pct}% — ` + (pct >= 70
-      ? '면접관과 눈을 잘 마주쳤어요.'
-      : pct >= 40
-        ? '시선이 가끔 흔들렸어요. 카메라 정면을 의식해 보세요.'
-        : '시선이 자주 벗어났어요. 카메라 렌즈를 보고 말하는 연습을 해보세요.');
-  } else {
+  let eyePen = 0, posPen = 0, gazePct = null;
+  if (S.gaze.total >= 10) {
+    gazePct = Math.round((S.gaze.good / S.gaze.total) * 100);
+    eyePen = gazePct >= 70 ? 0 : gazePct >= 50 ? 2 : gazePct >= 30 ? 5 : 8;
+  }
+  if (S.posture.total >= 10) {
+    const badShare = S.posture.bad / S.posture.total;
+    posPen = badShare > 0.5 ? 4 : badShare > 0.3 ? 2 : 0;
+  }
+  S.attitudePenalty = Math.min(10, eyePen + posPen);
+  S.gazePct = gazePct;
+  if (gazePct === null) {
     el.gazeSummary.hidden = true;
+  } else {
+    el.gazeSummary.hidden = false;
+    el.gazeSummary.textContent = `라이브 분석 · 눈맞춤 ${gazePct}%` +
+      (S.attitudePenalty > 0 ? ` · 태도 -${S.attitudePenalty}점` : ' · 태도 감점 없음') +
+      (gazePct >= 70 ? ' — 면접관과 눈을 잘 마주쳤어요.'
+        : gazePct >= 40 ? ' — 시선이 가끔 흔들렸어요. 카메라 정면을 의식해 보세요.'
+          : ' — 시선이 자주 벗어났어요. 카메라 렌즈를 보고 말하는 연습을 해보세요.');
   }
   generateComprehensive();
 }
@@ -1583,7 +1605,7 @@ async function finalize() {
 /* ================= 점수 화면 ================= */
 
 function paintScore(targets, scores, mode, meta = {}) {
-  const { agg, finalTotal, feedbacks, overtimePenalty } = computeAggregates(scores, mode, meta.overtimeSec ?? S.overtimeSec);
+  const { agg, finalTotal, feedbacks, overtimePenalty, attitudePenalty } = computeAggregates(scores, mode, meta.overtimeSec ?? S.overtimeSec, meta.attitudePenalty ?? S.attitudePenalty);
   const C = 2 * Math.PI * 78;
   targets.gauge.innerHTML = `<svg viewBox="0 0 180 180" aria-hidden="true">
     <defs><linearGradient id="gauge-grad" x1="0" y1="0" x2="1" y2="1">
@@ -1597,7 +1619,8 @@ function paintScore(targets, scores, mode, meta = {}) {
   const totalGrade = gradeFromRatio(finalTotal / 100, mode);
   const totalWord = finalTotal >= 90 ? '매우 우수' : finalTotal >= 80 ? '우수' : finalTotal >= 70 ? '양호' : finalTotal >= 60 ? '보통' : '미흡';
   const penNote = overtimePenalty > 0 ? ` · 초과 시간 -${overtimePenalty}점` : '';
-  targets.grade.textContent = `${totalWord} (${totalGrade} 등급)${penNote}`;
+  const attNote = attitudePenalty > 0 ? ` · 태도 -${attitudePenalty}점` : '';
+  targets.grade.textContent = `${totalWord} (${totalGrade} 등급)${penNote}${attNote}`;
   targets.feedback.textContent = feedbacks.join(' ') || '모든 문항이 채점되었습니다.';
 
   targets.qScores.innerHTML = '';
@@ -1883,6 +1906,8 @@ async function saveRecord() {
       items: S.scores,
       transcript: S.transcript,
       overtimeSec: S.overtimeSec || 0,
+      attitudePenalty: S.attitudePenalty || 0,
+      gazePct: S.gazePct,
       comprehensive: comp,
       createdAt: Date.now(),
     });
@@ -1922,7 +1947,7 @@ function renderRecords() {
 function showRecordView(rec) {
   S.currentRecord = rec;
   el.recvTitle.textContent = recordTitle(rec);
-  const meta = { ...(rec.comprehensive && rec.comprehensive.meta ? rec.comprehensive.meta : {}), overtimeSec: rec.overtimeSec || 0 };
+  const meta = { ...(rec.comprehensive && rec.comprehensive.meta ? rec.comprehensive.meta : {}), overtimeSec: rec.overtimeSec || 0, attitudePenalty: rec.attitudePenalty || 0 };
   paintScore({
     gauge: el.recvGauge, final: el.recvFinal, grade: el.recvGrade, feedback: el.recvFeedback,
     qScores: el.recvQScores, catScores: el.recvCatScores,
@@ -2065,6 +2090,9 @@ function resetInterview(full) {
   S.closingPhase = false; S.closingDone = false; S.closingSpeaker = null; S.closingAnswer = '';
   S.speakers = [];
   S.gaze = { good: 0, total: 0 };
+  S.posture = { bad: 0, total: 0 };
+  S.attitudePenalty = 0;
+  S.gazePct = null;
   S.busy = false; S.timerExpired = false; S.overtimeSec = 0; S.phase = 'idle';
   S.transcript = [];
   S.comprehensive = null;
