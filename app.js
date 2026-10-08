@@ -1826,7 +1826,7 @@ function trvItemHtml(t, i, per) {
     ? `<p class="trv-sub"><strong>꼬리질문:</strong> ${esc(t.followupQ)}<br><strong>꼬리답변:</strong> ${esc(t.followupAnswer || '(답변 없음)')}</p>`
     : '';
   return `<div class="trv-item">
-    <div class="trv-head"><span>문항 ${i + 1}</span>${t.score ? `<span class="trv-score">${t.score.total}점</span>` : ''}</div>
+    <div class="trv-head"><span>${t.closing ? '마지막 한마디' : `문항 ${i + 1}`}</span>${t.score ? `<span class="trv-score">${t.score.total}점</span>` : ''}</div>
     <p class="trv-q"><strong>질문:</strong> ${esc(t.question)}</p>
     <p class="trv-ans"><strong>내 답변:</strong> ${esc(t.answer)}</p>
     ${sub}

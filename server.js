@@ -841,7 +841,7 @@ const server = http.createServer(async (req, res) => {
 
     let parsed;
     try {
-      parsed = JSON.parse(body);
+      parsed = body.trim() ? JSON.parse(body) : {};
     } catch {
       return send(res, 400, { ok: false, error: '잘못된 JSON 본문입니다.' });
     }
