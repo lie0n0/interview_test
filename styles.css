@@ -1244,24 +1244,15 @@ textarea { resize: vertical; line-height: 1.6; }
   background: rgba(79, 93, 255, 0.16);
   box-shadow: 0 0 0 3px rgba(79, 93, 255, 0.25), 0 8px 24px rgba(79, 93, 255, 0.35);
 }
-.iv-photo svg, .iv-photo img {
+.iv-photo svg, .iv-photo img, .iv-photo canvas {
   width: 128px;
   height: 128px;
   border-radius: 50%;
   display: block;
   transform-origin: 50% 90%;
 }
-.iv-photo img { object-fit: cover; background: #0c1022; animation: iv-idle 9s ease-in-out infinite alternate; }
-.iv-card.speaking .iv-photo { animation: iv-talk 0.9s ease-in-out infinite; }
-@keyframes iv-idle {
-  from { transform: scale(1) translateY(0); }
-  to { transform: scale(1.07) translateY(-4px); }
-}
-@keyframes iv-talk {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  30% { transform: translateY(-3px) rotate(-1.2deg); }
-  60% { transform: translateY(1px) rotate(1.2deg); }
-}
+.iv-photo img { object-fit: cover; background: #0c1022; }
+.iv-photo canvas { background: #0c1022; }
 .iv-eq { display: flex; align-items: flex-end; gap: 3px; height: 14px; opacity: 0.35; }
 .iv-eq span { width: 4px; height: 4px; border-radius: 2px; background: #8f9bff; }
 .iv-card.speaking .iv-eq { opacity: 1; }
@@ -1317,5 +1308,5 @@ textarea { resize: vertical; line-height: 1.6; }
 .msg.bot .avatar.iv-f { background: linear-gradient(135deg, #9d4edd, #f15bb5); }
 
 @media (max-width: 640px) {
-  .iv-photo svg, .iv-photo img { width: 88px; height: 88px; }
+  .iv-photo svg, .iv-photo img, .iv-photo canvas { width: 88px; height: 88px; }
 }

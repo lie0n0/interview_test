@@ -600,6 +600,7 @@ function speakerLabel(g) {
   return g === 'male' ? '남자 면접관' : '여자 면접관';
 }
 function setActiveSpeaker(g) {
+  talkFace = g === 'male' ? 0 : 1;
   const m = g === 'male';
   el.ivMale.classList.toggle('speaking', m);
   el.ivFemale.classList.toggle('speaking', !m);
@@ -607,6 +608,7 @@ function setActiveSpeaker(g) {
   if (el.ivFemaleBadge) el.ivFemaleBadge.textContent = m ? '대기' : '질문 중';
 }
 function clearActiveSpeaker() {
+  talkFace = -1;
   el.ivMale.classList.remove('speaking');
   el.ivFemale.classList.remove('speaking');
   if (el.ivMaleBadge) el.ivMaleBadge.textContent = '대기';
@@ -812,6 +814,182 @@ function updateFaceUI(res) {
 }
 function stopSpeak() {
   if ('speechSynthesis' in window) speechSynthesis.cancel();
+}
+
+/* ================= 토킹 포토 엔진 (면접관 움직임) ================= */
+
+const TALK_FACES = [
+  {
+    img: 'assets/interviewer-male.jpg',
+    head: { cx: 242, cy: 195, rx: 95, ry: 140 },
+    mouth: { cx: 250, cy: 292, rx: 26, tilt: 0.02, curve: 0.6 },
+    jaw: { cx: 250, cy: 314, rx: 62, ry: 44 },
+    eyes: [{ cx: 216, cy: 207, rx: 15, ry: 5 }, { cx: 285, cy: 204, rx: 14, ry: 5 }],
+    jmax: 7, phase: 0,
+  },
+  {
+    img: 'assets/interviewer-female.jpg',
+    head: { cx: 255, cy: 185, rx: 88, ry: 120 },
+    mouth: { cx: 255, cy: 260, rx: 24, tilt: 0, curve: 0.8 },
+    jaw: { cx: 255, cy: 282, rx: 58, ry: 42 },
+    eyes: [{ cx: 220, cy: 189, rx: 14, ry: 5 }, { cx: 290, cy: 187, rx: 13, ry: 5 }],
+    jmax: 6, phase: 2.3,
+  },
+];
+
+const TALK_POSES = {
+  neutral: { hx: 0, hy: 0, rot: 0, sc: 0, lid: 0 },
+  tiltL: { hx: -1.5, hy: 0.5, rot: -0.03, sc: 0, lid: 0 },
+  tiltR: { hx: 1.5, hy: 0.5, rot: 0.03, sc: 0, lid: 0 },
+  lean: { hx: 0, hy: 2, rot: 0, sc: 0.03, lid: 0 },
+  sitBack: { hx: 0, hy: -1.5, rot: 0, sc: -0.02, lid: 0 },
+  notes: { hx: 0, hy: 5, rot: 0.012, sc: 0.01, lid: 0.55 },
+  lookOther: { hx: 0, hy: 0.5, rot: 0, sc: 0, lid: 0 },
+};
+
+const talkFaces = TALK_FACES.map((f, i) => ({
+  cfg: f, open: 0, target: 0, nextSyl: 0, blink: 0, blinkAt: performance.now() + 1500 + i * 900,
+  hx: 0, hy: 0, rot: 0, sc: 0, lid: 0,
+  pose: { ...TALK_POSES.neutral }, goal: { ...TALK_POSES.neutral },
+  poseAt: performance.now() + 2500 + i * 1800, nodUntil: 0,
+  cv: null, ctx: null, base: null, out: null, ready: false,
+}));
+let talkFace = -1;
+let talkLast = 0;
+let talkStarted = false;
+const talkSmooth = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
+const talkReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function talkPickPose(i) {
+  const st = talkFaces[i];
+  const me = talkFace === i, other = talkFace !== -1 && talkFace !== i;
+  let bag;
+  if (me) bag = ['neutral', 'neutral', 'tiltL', 'tiltR', 'lean'];
+  else if (other) bag = ['lookOther', 'lookOther', 'neutral', 'notes', 'sitBack'];
+  else bag = ['neutral', 'neutral', 'tiltL', 'tiltR', 'sitBack', 'notes'];
+  let name = bag[Math.floor(Math.random() * bag.length)];
+  if (name === 'nod') { st.nodUntil = performance.now() + 1400; name = 'neutral'; }
+  const g = { ...TALK_POSES[name] };
+  if (name === 'lookOther') { const dir = i === 0 ? 1 : -1; g.hx = 3.5 * dir; g.rot = 0.02 * dir; }
+  st.goal = g;
+  st.poseAt = performance.now() + (me ? 1800 : 2500) + Math.random() * (me ? 2200 : 3500);
+}
+
+function talkInit() {
+  if (talkStarted) return;
+  talkStarted = true;
+  const cvs = document.querySelectorAll('.iv-canvas');
+  cvs.forEach((cv) => {
+    const i = Number(cv.dataset.face || 0);
+    const st = talkFaces[i];
+    if (!st) return;
+    st.cv = cv;
+    st.ctx = cv.getContext('2d');
+    const img = new Image();
+    img.onload = () => {
+      try {
+        st.ctx.drawImage(img, 0, 0, 512, 512);
+        st.base = st.ctx.getImageData(0, 0, 512, 512);
+        st.out = st.ctx.createImageData(512, 512);
+        st.ready = true;
+      } catch {}
+    };
+    img.src = TALK_FACES[i].img;
+  });
+  requestAnimationFrame(talkLoop);
+}
+
+function talkRenderFace(st) {
+  const f = st.cfg, W = 512, H = 512;
+  const o = st.out.data, d = st.base.data;
+  const hd = f.head, m = f.mouth, j = f.jaw, eyes = f.eyes;
+  const open = st.open * f.jmax, hx = st.hx, hy = st.hy;
+  const b = Math.max(st.blink, st.lid || 0), rot = st.rot || 0, sc = st.sc || 0;
+  const px = m.cx, py = m.cy + 45;
+  let k = 0;
+  for (let yy = 0; yy < H; yy++) {
+    for (let xx = 0; xx < W; xx++, k += 4) {
+      const ux = (xx - hd.cx) / hd.rx, uy = (yy - hd.cy) / hd.ry, r2 = ux * ux + uy * uy;
+      if (r2 >= 1) { const q = (yy * W + xx) * 4; o[k] = d[q]; o[k + 1] = d[q + 1]; o[k + 2] = d[q + 2]; o[k + 3] = 255; continue; }
+      const r = Math.sqrt(r2), wh = r < 0.62 ? 1 : talkSmooth((1 - r) / 0.38);
+      let sx = xx - wh * (hx - rot * (yy - py) + sc * (xx - hd.cx));
+      let sy = yy - wh * (hy + rot * (xx - px) + sc * (yy - hd.cy));
+      let inA = 0, depth = 0;
+      const mxs = (sx - m.cx) / m.rx, ml = m.cy + m.tilt * (sx - m.cx) + (Math.abs(mxs) < 1 ? m.curve * (1 - mxs * mxs) : 0);
+      if (open > 0.25 && sy >= ml) {
+        const jx = (sx - j.cx) / j.rx, jy = (sy - j.cy) / j.ry, jr2 = jx * jx + jy * jy;
+        if (jr2 < 1) {
+          const jr = Math.sqrt(jr2), wj = jr < 0.55 ? 1 : talkSmooth((1 - jr) / 0.45);
+          const lens = Math.abs(mxs) < 1 ? Math.pow(1 - mxs * mxs, 0.85) : 0;
+          const s2 = talkSmooth((sy - ml) / 40);
+          const shift = open * wj * Math.max(lens, s2);
+          const ns = sy - shift;
+          if (ns < ml && lens > 0) { inA = Math.min(1, (ml - ns) / 1.8) * Math.min(1, lens * 2.5); depth = (sy - ml) / Math.max(1, shift); sy = ml - 0.5; }
+          else sy = ns;
+        }
+      }
+      let lid = 0;
+      if (b > 0) {
+        for (let e = 0; e < eyes.length; e++) {
+          const E = eyes[e], ex = (sx - E.cx) / E.rx;
+          if (ex > -1.15 && ex < 1.15) {
+            const wx = Math.sqrt(Math.max(0, 1 - ex * ex / 1.3225));
+            const yt = E.cy - E.ry * 1.15 * wx, yb = E.cy + E.ry * 1.15 * wx, yl = yt + b * (yb - yt + 1);
+            if (sy >= yt - 1 && sy <= yl) { lid = Math.max(0, 1 - (yl - sy) / 1.5) * 0.35; sy = yt - 2.5; break; }
+          }
+        }
+      }
+      if (sx < 0) sx = 0; if (sx > W - 2) sx = W - 2; if (sy < 0) sy = 0; if (sy > H - 2) sy = H - 2;
+      const xi = sx | 0, yi = sy | 0, ax = sx - xi, ay = sy - yi, i00 = (yi * W + xi) * 4, i01 = i00 + W * 4;
+      let R = (d[i00] * (1 - ax) + d[i00 + 4] * ax) * (1 - ay) + (d[i01] * (1 - ax) + d[i01 + 4] * ax) * ay;
+      let G = (d[i00 + 1] * (1 - ax) + d[i00 + 5] * ax) * (1 - ay) + (d[i01 + 1] * (1 - ax) + d[i01 + 5] * ax) * ay;
+      let B = (d[i00 + 2] * (1 - ax) + d[i00 + 6] * ax) * (1 - ay) + (d[i01 + 2] * (1 - ax) + d[i01 + 6] * ax) * ay;
+      if (lid > 0) { R *= 1 - lid; G *= 1 - lid; B *= 1 - lid; }
+      if (inA > 0) {
+        const tooth = open > 4.5 ? talkSmooth((0.32 - depth) / 0.12) * 0.55 : 0;
+        const sh = 0.7 + 0.3 * depth;
+        const cr = 58 * sh * (1 - tooth) + 178 * tooth, cg = 24 * sh * (1 - tooth) + 166 * tooth, cb = 26 * sh * (1 - tooth) + 160 * tooth;
+        R = R * (1 - inA) + cr * inA; G = G * (1 - inA) + cg * inA; B = B * (1 - inA) + cb * inA;
+      }
+      o[k] = R; o[k + 1] = G; o[k + 2] = B; o[k + 3] = 255;
+    }
+  }
+  st.ctx.putImageData(st.out, 0, 0);
+}
+
+function talkLoop(now) {
+  requestAnimationFrame(talkLoop);
+  if (document.hidden || now - talkLast < 33) return;
+  talkLast = now;
+  if (el.liveStage && el.liveStage.hidden) return;
+  const t = now / 1000;
+  talkFaces.forEach((st, i) => {
+    if (!st.ready) return;
+    if (talkReduced) {
+      if (!st.staticDrawn) { st.ctx.putImageData(st.base, 0, 0); st.staticDrawn = true; }
+      return;
+    }
+    const me = talkFace === i && S.liveActive;
+    if (me) {
+      if (now > st.nextSyl) { st.target = Math.random() < 0.13 ? 0.04 : 0.3 + Math.random() * 0.7; st.nextSyl = now + 85 + Math.random() * 120; }
+    } else st.target = 0;
+    st.open += (st.target - st.open) * 0.45;
+    if (st.open < 0.02) st.open = 0;
+    const p = st.cfg.phase + i * 1.7, tk = me ? 1 : 0;
+    if (now > st.poseAt) talkPickPose(i);
+    for (const kk in st.pose) st.pose[kk] += (st.goal[kk] - st.pose[kk]) * 0.05;
+    const nod = now < st.nodUntil ? 2.6 * Math.max(0, Math.sin((st.nodUntil - now) / 1400 * Math.PI * 3)) : 0;
+    st.hy = st.pose.hy + 1.5 * Math.sin(t * 0.8 + p) + 0.6 * Math.sin(t * 1.9 + p) + tk * (3 * Math.sin(t * 2.7 + p) + 1.2 * Math.sin(t * 4.3 + p)) + nod;
+    st.hx = st.pose.hx + 1.3 * Math.sin(t * 0.55 + p) + tk * 2 * Math.sin(t * 1.6 + p);
+    st.rot = st.pose.rot + 0.009 * Math.sin(t * 0.45 + p) + tk * 0.016 * Math.sin(t * 1.3 + p);
+    st.sc = st.pose.sc; st.lid = me ? 0 : st.pose.lid;
+    if (now > st.blinkAt) {
+      const bt = (now - st.blinkAt) / 140;
+      st.blink = bt < 1 ? Math.sin(bt * Math.PI) : 0;
+      if (bt >= 1) { st.blink = 0; st.blinkAt = now + 2200 + Math.random() * 3800; }
+    }
+    talkRenderFace(st);
+  });
 }
 
 /* ================= STT (마이크 인식) ================= */
@@ -2280,6 +2458,7 @@ if ('speechSynthesis' in window) {
   speechSynthesis.getVoices();
   speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
 }
+talkInit();
 
 /* ================= 시작 ================= */
 loadUniversities();
