@@ -864,7 +864,7 @@ function talkPickPose(i) {
   const st = talkFaces[i];
   const me = talkFace === i, other = talkFace !== -1 && talkFace !== i;
   let bag;
-  if (me) bag = ['neutral', 'neutral', 'tiltL', 'tiltR', 'lean'];
+  if (me) bag = ['neutral', 'neutral', 'tiltL', 'tiltR', 'lean', 'nod'];
   else if (other) bag = ['lookOther', 'lookOther', 'neutral', 'notes', 'sitBack'];
   else bag = ['neutral', 'neutral', 'tiltL', 'tiltR', 'sitBack', 'notes'];
   let name = bag[Math.floor(Math.random() * bag.length)];
