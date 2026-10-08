@@ -422,8 +422,8 @@ function extractJson(text) {
   return null;
 }
 
-function callPollinations(modelName, prompt, timeoutMs) {
-  return new Promise((resolve, reject) => {
+function callPollinations(modelName, prompt, timeoutMs, retries = 2) {
+  const attempt = (left) => new Promise((resolve, reject) => {
     const body = JSON.stringify({
       model: modelName,
       messages: [{ role: 'user', content: prompt }],
@@ -443,27 +443,41 @@ function callPollinations(modelName, prompt, timeoutMs) {
         res.on('data', (d) => (data += d));
         res.on('end', () => {
           if (res.statusCode !== 200) {
-            reject(new Error(`Pollinations 호출 실패: HTTP ${res.statusCode} — ${data.slice(0, 200)}`));
+            if (left > 0) {
+              setTimeout(() => attempt(left - 1).then(resolve, reject), 2000);
+            } else {
+              reject(new Error(`Pollinations 호출 실패: HTTP ${res.statusCode} — ${data.slice(0, 200)}`));
+            }
             return;
           }
           try {
             const content = JSON.parse(data).choices?.[0]?.message?.content;
             if (typeof content !== 'string' || !content.trim()) {
-              reject(new Error('Pollinations 호출 실패: content 없음'));
-              return;
+              throw new Error('content 없음');
             }
             resolve(content);
           } catch {
-            reject(new Error('Pollinations 호출 실패: 응답 파싱 오류'));
+            if (left > 0) {
+              setTimeout(() => attempt(left - 1).then(resolve, reject), 2000);
+            } else {
+              reject(new Error('Pollinations 호출 실패: 응답 파싱 오류'));
+            }
           }
         });
       }
     );
-    req.on('error', (e) => reject(new Error(`Pollinations 호출 실패: ${e.message}`)));
+    req.on('error', (e) => {
+      if (left > 0) {
+        setTimeout(() => attempt(left - 1).then(resolve, reject), 2000);
+      } else {
+        reject(new Error(`Pollinations 호출 실패: ${e.message}`));
+      }
+    });
     req.setTimeout(timeoutMs, () => req.destroy(new Error('Pollinations 호출 시간 초과')));
     req.write(body);
     req.end();
   });
+  return attempt(retries);
 }
 
 function callGemini(modelName, prompt, timeoutMs) {
@@ -511,7 +525,7 @@ function callGemini(modelName, prompt, timeoutMs) {
   });
 }
 
-/** LLM 1회 호출 → {json, text} (파싱 실패 시 throw): CLI(사용자 인증·cost 0, 실측 동작) → zen 직통 → Gemini(키 있을 때) → Pollinations */
+/** LLM 1회 호출 → {json, text} (파싱 실패 시 throw): CLI(사용자 인증·cost 0) → Pollinations(키 불필요·재시도) → zen 직통 → Gemini(키 있을 때) */
 async function llm(prompt, { model = 'interviewer', strict = false, timeoutMs = 240000 } = {}) {
   const modelId = MODELS[model] || model;
   const finalPrompt = strict
@@ -527,6 +541,14 @@ async function llm(prompt, { model = 'interviewer', strict = false, timeoutMs = 
     return { json, text };
   } catch (e) {
     errors.push('CLI: ' + e.message);
+  }
+  try {
+    const text = await callPollinations(POLLINATIONS_MODEL, finalPrompt, Math.min(timeoutMs, 120000));
+    const json = extractJson(text.trim());
+    if (!json) throw new Error('LLM 응답에서 JSON을 찾지 못했습니다.');
+    return { json, text };
+  } catch (e) {
+    errors.push(e.message);
   }
   try {
     const text = await callZenDirect(modelId, finalPrompt, timeoutMs);
@@ -545,14 +567,6 @@ async function llm(prompt, { model = 'interviewer', strict = false, timeoutMs = 
     } catch (e) {
       errors.push(e.message);
     }
-  }
-  try {
-    const text = await callPollinations(POLLINATIONS_MODEL, finalPrompt, Math.min(timeoutMs, 120000));
-    const json = extractJson(text.trim());
-    if (!json) throw new Error('LLM 응답에서 JSON을 찾지 못했습니다.');
-    return { json, text };
-  } catch (e) {
-    errors.push(e.message);
   }
   throw new Error('LLM 호출 실패: ' + errors.join(' / '));
 }
@@ -1056,7 +1070,7 @@ opencodeReady.then((r) => {
 server.listen(PORT, () => {
   console.log('');
   console.log('  AI 면접 연습실: http://localhost:' + PORT);
-  console.log('  LLM: CLI → zen 직통' + (GEMINI_API_KEY ? ' → Gemini(' + GEMINI_MODEL + ')' : '') + ' → Pollinations(' + POLLINATIONS_MODEL + ')');
+  console.log('  LLM: CLI → Pollinations(' + POLLINATIONS_MODEL + ', 키 불필요·재시도)' + (GEMINI_API_KEY ? ' → Gemini(' + GEMINI_MODEL + ')' : '') + ' → zen 직통');
   console.log('  종료: Ctrl+C');
   console.log('');
 });
